@@ -1,0 +1,206 @@
+[
+  {
+    "_index": "packets-2025-03-12",
+    "_type": "doc",
+    "_score": null,
+    "_source": {
+      "layers": {
+        "frame": {
+          "frame.encap_type": "47",
+          "frame.time": "Mar 12, 2025 16:03:41.428641000 中国标准时间",
+          "frame.time_utc": "Mar 12, 2025 08:03:41.428641000 UTC",
+          "frame.time_epoch": "1741766621.428641000",
+          "frame.offset_shift": "0.000000000",
+          "frame.time_delta": "0.101885000",
+          "frame.time_delta_displayed": "0.101885000",
+          "frame.time_relative": "0.228911000",
+          "frame.number": "5",
+          "frame.len": "559",
+          "frame.cap_len": "559",
+          "frame.marked": "0",
+          "frame.ignored": "0",
+          "frame.protocols": "user_dlt:udp:mac-nr:rlc-nr:pdcp-nr:nr-rrc:nas-5gs"
+        },
+        "user_dlt": "DLT: 149, Payload: udp (User Datagram Protocol)",
+        "udp": {
+          "udp.srcport": "48879",
+          "udp.dstport": "57005",
+          "udp.port": "48879",
+          "udp.port": "57005",
+          "udp.length": "559",
+          "udp.checksum": "0x0000",
+          "udp.checksum_tree": {
+            "udp.checksum.status": "3"
+          },
+          "udp.stream": "0",
+          "udp.stream.pnum": "5",
+          "Timestamps": {
+            "udp.time_relative": "0.228911000",
+            "udp.time_delta": "0.101885000"
+          },
+          "udp.payload": "6d:61:63:2d:6e:72:01:00:03:02:46:01:03:00:01:06:00:05:00:04:01:48:01:01:23:c0:00:00:00:10:00:05:df:80:10:5e:40:03:40:40:3c:44:00:00:00:00:00:00:00:00:04:0b:80:bc:1c:00:00:00:00:00:3d:05:3f:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+        },
+        "mac-nr": {
+          "mac-nr.context": "",
+          "mac-nr.context_tree": {
+            "mac-nr.radio-type": "1",
+            "mac-nr.direction": "0",
+            "mac-nr.rnti": "0x4601",
+            "mac-nr.rnti-type": "3",
+            "mac-nr.ueid": "1",
+            "mac-nr.harqid": "0",
+            "mac-nr.type2-other-cell": "0"
+          },
+          "mac-nr.subheader": "",
+          "mac-nr.subheader_tree": {
+            "mac-nr.subheader.reserved": "0x00",
+            "mac-nr.subheader.f": "0",
+            "mac-nr.ulsch.lcid": "1",
+            "mac-nr.lcid": "0x01",
+            "mac-nr.subheader.sdu-length": "35",
+            "mac-nr.ulsch.sdu": "c0:00:00:00:10:00:05:df:80:10:5e:40:03:40:40:3c:44:00:00:00:00:00:00:00:00:04:0b:80:bc:1c:00:00:00:00:00"
+          },
+          "rlc-nr": {
+            "rlc-nr.context": "",
+            "rlc-nr.context_tree": {
+              "rlc-nr.direction": "0",
+              "rlc-nr.mode": "4",
+              "rlc-nr.ueid": "1",
+              "rlc-nr.bearer-type": "4",
+              "rlc-nr.bearer-id": "1",
+              "rlc-nr.pdu-length": "35",
+              "rlc-nr.seqnum-length": "12"
+            },
+            "rlc-nr.am": "",
+            "rlc-nr.am.header": "",
+            "rlc-nr.am.header_tree": {
+              "rlc-nr.am.dc": "1",
+              "rlc-nr.am.p": "1",
+              "rlc-nr.am.si": "0x00",
+              "rlc-nr.am.sn": "0"
+            },
+            "rlc-nr.am.data": "00:00:10:00:05:df:80:10:5e:40:03:40:40:3c:44:00:00:00:00:00:00:00:00:04:0b:80:bc:1c:00:00:00:00:00",
+            "pdcp-nr": {
+              "pdcp-nr.configuration": "",
+              "pdcp-nr.configuration_tree": {
+                "pdcp-nr.direction": "0",
+                "pdcp-nr.plane": "1",
+                "pdcp-nr.ueid": "1",
+                "pdcp-nr.Bearer-type": "1",
+                "pdcp-nr.bearer-id": "1",
+                "pdcp-nr.seqnum_length": "12",
+                "pdcp-nr.maci_present": "1",
+                "pdcp-nr.ciphering-disabled": "0"
+              },
+              "pdcp-nr.reserved": "0",
+              "pdcp-nr.seq-num": "0",
+              "pdcp-nr.sequence-analysis": "",
+              "pdcp-nr.sequence-analysis_tree": {
+                "pdcp-nr.sequence-analysis.expected-sn": "0",
+                "pdcp-nr.sequence-analysis.ok": "1"
+              },
+              "nr-rrc": "NR Radio Resource Control (RRC) protocol",
+              "nr-rrc": {
+                "nr-rrc.UL_DCCH_Message_element": {
+                  "per.choice_index": "0",
+                  "nr-rrc.message": "0",
+                  "nr-rrc.message_tree": {
+                    "per.choice_index": "2",
+                    "nr-rrc.c1": "2",
+                    "nr-rrc.c1_tree": {
+                      "nr-rrc.rrcSetupComplete_element": {
+                        "nr-rrc.rrc_TransactionIdentifier": "0",
+                        "per.choice_index": "0",
+                        "nr-rrc.criticalExtensions": "0",
+                        "nr-rrc.criticalExtensions_tree": {
+                          "nr-rrc.rrcSetupComplete_element": {
+                            "per.optional_field_bit": "0",
+                            "per.optional_field_bit": "0",
+                            "per.optional_field_bit": "0",
+                            "per.optional_field_bit": "0",
+                            "per.optional_field_bit": "0",
+                            "per.optional_field_bit": "0",
+                            "nr-rrc.selectedPLMN_Identity": "1",
+                            "per.octet_string_length": "23",
+                            "nr-rrc.dedicatedNAS_Message": "7e:00:41:79:00:0d:01:00:f1:10:00:00:00:00:00:00:00:00:10:2e:02:f0:70",
+                            "nr-rrc.dedicatedNAS_Message_tree": {
+                              "nas-5gs": {
+                                "Plain NAS 5GS Message": {
+                                  "nas-5gs.epd": "126",
+                                  "nas-5gs.spare_half_octet": "0",
+                                  "nas-5gs.security_header_type": "0",
+                                  "nas-5gs.mm.message_type": "0x41",
+                                  "5GS registration type": {
+                                    "nas-5gs.mm.for": "1",
+                                    "nas-5gs.mm.5gs_reg_type": "1"
+                                  },
+                                  "NAS key set identifier": {
+                                    "nas-5gs.mm.tsc.h1": "0",
+                                    "nas-5gs.mm.nas_key_set_id.h1": "7"
+                                  },
+                                  "5GS mobile identity": {
+                                    "gsm_a.len": "13",
+                                    "nas-5gs.spare_b7": "0",
+                                    "nas-5gs.mm.suci.supi_fmt": "0",
+                                    "nas-5gs.spare_b3": "0",
+                                    "nas-5gs.mm.type_id": "1",
+                                    "e212.mcc": "001",
+                                    "e212.mnc": "01",
+                                    "nas-5gs.mm.suci.routing_indicator": "0000",
+                                    "nas-5gs.mm.suci.scheme_id": "0",
+                                    "nas-5gs.mm.suci.pki": "0",
+                                    "nas-5gs.mm.suci.msin": "0000000001"
+                                  },
+                                  "UE security capability": {
+                                    "nas-5gs.mm.elem_id": "0x2e",
+                                    "gsm_a.len": "2",
+                                    "nas-5gs.mm.5g_ea0": "1",
+                                    "nas-5gs.mm.128_5g_ea1": "1",
+                                    "nas-5gs.mm.128_5g_ea2": "1",
+                                    "nas-5gs.mm.128_5g_ea3": "1",
+                                    "nas-5gs.mm.5g_ea4": "0",
+                                    "nas-5gs.mm.5g_ea5": "0",
+                                    "nas-5gs.mm.5g_ea6": "0",
+                                    "nas-5gs.mm.5g_ea7": "0",
+                                    "nas-5gs.mm.ia0": "0",
+                                    "nas-5gs.mm.5g_128_ia1": "1",
+                                    "nas-5gs.mm.5g_128_ia2": "1",
+                                    "nas-5gs.mm.5g_128_ia3": "1",
+                                    "nas-5gs.mm.5g_128_ia4": "0",
+                                    "nas-5gs.mm.5g_ia5": "0",
+                                    "nas-5gs.mm.5g_ia6": "0",
+                                    "nas-5gs.mm.5g_ia7": "0"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "pdcp-nr.mac": "0x00000000"
+            }
+          },
+          "mac-nr.subheader": "",
+          "mac-nr.subheader_tree": {
+            "mac-nr.subheader.reserved": "0x00",
+            "mac-nr.ulsch.lcid": "61",
+            "mac-nr.lcid": "0x3d",
+            "mac-nr.control.bsr.short.lcg": "0",
+            "mac-nr.control.bsr.bs-lcg0": "5"
+          },
+          "mac-nr.subheader": "",
+          "mac-nr.subheader_tree": {
+            "mac-nr.subheader.reserved": "0x00",
+            "mac-nr.ulsch.lcid": "63",
+            "mac-nr.lcid": "0x3f",
+            "mac-nr.padding": "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+          }
+        }
+      }
+    }
+  }
+]
