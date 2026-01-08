@@ -3,7 +3,6 @@ package com.example.scene.decodersystem;
 import com.example.procedure.Application;
 import com.example.procedure.model.ProcedureMatchResult;
 import com.example.procedure.model.SignalingMessage;
-import com.example.procedure.rule.ProcedureRule;
 import com.example.procedure.service.ProClassify_Service;
 import com.example.procedure.service.ProManager_Service;
 import org.junit.jupiter.api.Test;

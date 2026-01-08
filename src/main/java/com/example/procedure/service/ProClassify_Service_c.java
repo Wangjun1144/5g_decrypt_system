@@ -14,7 +14,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-public class ProClassify_Service {
+public class ProClassify_Service_c {
 
     private final ProManager_Service proManagerService;
     private final FlowRegistry flowRegistry;

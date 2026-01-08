@@ -3,9 +3,9 @@ package com.example.procedure.service;
 import com.example.procedure.model.Procedure;
 import com.example.procedure.rule.InitialAccessKeyBits;
 
-public final class ProcedureCloseDecider {
+public final class ProcedureCloseDecider11 {
 
-    private ProcedureCloseDecider(){}
+    private ProcedureCloseDecider11(){}
 
     /** END_seen 后等待关键消息补齐窗口（完全乱序建议 20~60 秒） */
     public static final long CLOSE_TIMEOUT_MS = 30_000;

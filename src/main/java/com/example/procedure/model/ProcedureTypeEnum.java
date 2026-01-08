@@ -6,7 +6,8 @@ public enum ProcedureTypeEnum {
     XN_HANDOVER("XHO", "Xn 切换"),
     N2_HANDOVER("N2H", "N2 切换"),
     RRC_REESTABLISH("RRE", "RRC 重建/恢复"),
-    PDU_SESSION("PDU", "PDU 会话建立"),
+    GNBCUINTERNAL_HANDOVER("GCI", "gNB-CU 内部切换"),
+    RRCSTATE_TRANSFER("RST", "RRC 状态迁移"),
     UNKNOWN("UNK", "未知流程");
 
     private final String code;
