@@ -31,3 +31,21 @@ build/
 
 ### VS Code ###
 .vscode/
+
+
+# runtime outputs
+runtime/*.json
+runtime/wireshark_cfg/
+runtime/wireshark_tmp/
+runtime/*.hex
+
+# logs
+logs/*.log
+
+# mac/windows junk
+.DS_Store
+Thumbs.db
+
+# weird/unintended files
+git
+json*

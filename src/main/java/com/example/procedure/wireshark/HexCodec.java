@@ -15,7 +15,7 @@ public class HexCodec {
 
         byte[] out = new byte[s.length() / 2];
         for (int i = 0; i < out.length; i++) {
-            int hi = Character.digit(s.charAt(i * 2), 16);
+                int hi = Character.digit(s.charAt(i * 2), 16);
             int lo = Character.digit(s.charAt(i * 2 + 1), 16);
             if (hi < 0 || lo < 0) throw new IllegalArgumentException("Invalid hex at index " + (i * 2));
             out[i] = (byte) ((hi << 4) | lo);
