@@ -1,5 +1,7 @@
 package com.example.procedure.wireshark;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -8,44 +10,49 @@ import java.nio.file.Paths;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+@Setter
+@Getter
 @Component
 @ConfigurationProperties(prefix = "wireshark")
 public class WiresharkProperties {
 
-    /** e.g. C:\Program Files\Wireshark\tshark.exe */
+    /** e.g. D:\wireshark\tshark.exe */
     private String tsharkPath;
 
-    /** e.g. C:\Program Files\Wireshark\text2pcap.exe (optional now) */
+    /** e.g. D:\wireshark\text2pcap.exe (optional now) */
     private String text2pcapPath;
 
-    /** e.g. runtime\wireshark_cfg */
+    /** isolated config root, e.g. runtime\wireshark_cfg */
     private String cfgRoot = "runtime\\wireshark_cfg";
 
     /** e.g. rrc_decode */
     private String profileName = "rrc_decode";
 
-    /**
-     * user_dlts mapping: DLT -> dissector name, e.g. 147 -> nr-rrc
-     * from properties: wireshark.userDlts.147=nr-rrc
-     */
+
+    /** DLT -> dissector name */
     private Map<Integer, String> userDlts = new LinkedHashMap<>();
 
-    public String getTsharkPath() { return tsharkPath; }
-    public void setTsharkPath(String tsharkPath) { this.tsharkPath = tsharkPath; }
+    /**
+     * If true: set WIRESHARK_CONFIG_DIR to cfgRoot (isolated config).
+     * If false: don't set WIRESHARK_CONFIG_DIR, use system default (Roaming\Wireshark).
+     */
+    private boolean useIsolatedConfig = true;
 
-    public String getText2pcapPath() { return text2pcapPath; }
-    public void setText2pcapPath(String text2pcapPath) { this.text2pcapPath = text2pcapPath; }
+    private boolean enableTlsDecryption = false;
 
-    public String getCfgRoot() { return cfgRoot; }
-    public void setCfgRoot(String cfgRoot) { this.cfgRoot = cfgRoot; }
-
-    public String getProfileName() { return profileName; }
-    public void setProfileName(String profileName) { this.profileName = profileName; }
-
-    public Map<Integer, String> getUserDlts() { return userDlts; }
-    public void setUserDlts(Map<Integer, String> userDlts) { this.userDlts = userDlts; }
+    /**
+     * Optional override for WIRESHARK_CONFIG_DIR.
+     * Example: C:\Users\wjw15\AppData\Roaming\Wireshark
+     * If set, it takes priority over useIsolatedConfig/cfgRoot.
+     */
+    private String configDir;
 
     public Path cfgRootPath() {
         return Paths.get(cfgRoot).toAbsolutePath().normalize();
+    }
+
+    public Path configDirPathOrNull() {
+        if (configDir == null || configDir.isBlank()) return null;
+        return Paths.get(configDir).toAbsolutePath().normalize();
     }
 }

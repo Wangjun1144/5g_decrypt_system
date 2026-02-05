@@ -1,6 +1,10 @@
 package com.example.scene.decodersystem;
 
 import com.example.procedure.Application;
+import com.example.procedure.streaming.layers.ChainsInspectConsumer;
+import com.example.procedure.streaming.layers.LayersSelectiveParser;
+import com.example.procedure.streaming.parser.PacketParseContext;
+import com.example.procedure.streaming.parser.RrcNasParseResult;
 import com.example.procedure.wireshark.TsharkRunner;
 import com.example.procedure.wireshark.WiresharkDecodeService;
 import com.example.procedure.wireshark.WiresharkProperties;
@@ -8,10 +12,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.Set;
 
 @SpringBootTest(classes = Application.class)
 class WiresharkDecodeIT {
@@ -136,4 +144,60 @@ class WiresharkDecodeIT {
             System.out.println("[SKIP] rrc hex file not found: " + rrcHexFile.toAbsolutePath());
         }
     }
+
+//    @Test
+//    void contextLoads() throws Exception{
+//        String tsharkJson =
+//                """
+//                [
+//                  {
+//                    "_index": "x",
+//                    "_type": "y",
+//                    "_source": {
+//                      "layers": {
+//                        "frame": {
+//                          "frame.number": "10",
+//                          "frame.time_epoch": "1700000000.123",
+//                          "frame.protocols": "eth:ip:sctp:nas-5gs:nr-rrc"
+//                        },
+//                        "nas-5gs_raw": ["AA11"],
+//                        "nas-5gs": {"nas.msg": "first"},
+//                        "nas-5gs_raw": ["BB22"],
+//                        "nas-5gs": {"nas.msg": "second"},
+//                        "nr-rrc_raw": ["CC33"],
+//                        "nr-rrc": {"rrc.msg": "hello"}
+//                      }
+//                    }
+//                  }
+//                ]
+//                """;
+//        Path pcap = Path.of("5g_srsRAN_n78_gain40_amf.pcapng");
+//
+//        Set<String> wanted = Set.of(
+//                "nas-5gs_raw",
+//                "nas-5gs",
+//                "nr-rrc",
+//                "mac-nr",
+//                "mac-nr_raw",
+//                "ngap",
+//                "http2",
+//                "json.object"
+//
+//        );
+//
+//        // 你希望启用并严格配对抓取的 raw layer（*_raw 必须紧挨着逻辑层才会被消费）
+//        Set<String> enabledRaw = Set.of(
+//                "nas-5gs_raw",
+//                "mac-nr_raw"
+//        );
+//
+//        tsharkRunner.decodeToJsonStream(pcap, in -> {
+//            try {
+//                LayersSelectiveParser.parsePackets(in, wanted, enabledRaw, new ChainsInspectConsumer());
+//            } catch (IOException e) {
+//                throw new RuntimeException(e);
+//            }
+//        });
+//    }
+
 }

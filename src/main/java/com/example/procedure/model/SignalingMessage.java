@@ -46,86 +46,18 @@ public class SignalingMessage {
     private List<NasInfo> nasList;
 
 
-    public String getDirection() {
-        // 1) NGAP direction 优先
-        if (ngapInfoList != null) {
-            for (NgapInfo n : ngapInfoList) {
-                if (n == null) continue;
-                String d = n.getDirection();
-                if (d != null && !d.trim().isEmpty()) {
-                    return d;
-                }
-            }
-        }
-
-        // 2) PDCP direction 次优先
-        if (pdcpInfo != null) {
-            String d = pdcpInfo.getDirection();
-            if (d != null && !d.trim().isEmpty()) {
-                return d;
-            }
-        }
-
-        // 2) 否则回退到本身 direction
-        return direction;
-    }
-
     /** 是否加密（NAS 或 PDCP 任意一层加密都算） */
     private Boolean encrypted;
 
     /** 加密类型/来源：NONE / NAS / PDCP / NAS+PDCP */
     private String encryptedType;
 
-    public boolean isEncrypted() {
-        boolean nasEnc = false;
-        if (nasList != null) {
-            for (NasInfo n : nasList) {
-                if (n != null && n.isEncrypted()) {
-                    nasEnc = true;
-                    break;
-                }
-            }
-        }
-
-        boolean pdcpEnc = (pdcpInfo != null && pdcpInfo.isPdcpencrypted());
-
-        return nasEnc || pdcpEnc;
-    }
-
-    public String getEncryptedType() {
-        boolean nasEnc = false;
-        if (nasList != null) {
-            for (NasInfo n : nasList) {
-                if (n != null && n.isEncrypted()) {
-                    nasEnc = true;
-                    break;
-                }
-            }
-        }
-
-        boolean pdcpEnc = (pdcpInfo != null && pdcpInfo.isPdcpencrypted());
-
-        if (nasEnc && pdcpEnc) return "NAS+PDCP";
-        if (nasEnc) return "NAS";
-        if (pdcpEnc) return "PDCP";
-        return "NONE";
-    }
 
     /** 解密成功后的明文（例如 hex 或 json 字符串，按你服务返回格式存） */
     private String decryptPlainHex;
 
     /** 解密相关的 MAC（可存服务返回的 mac 或者本次校验使用的 mac） */
     private String decryptMacHex;
-
-    public String getUeId() {
-        if (nuarInfo != null) {
-            String imsi = nuarInfo.getImsi();
-            if (imsi != null && !imsi.trim().isEmpty()) {
-                return imsi.trim();
-            }
-        }
-        return ueId;
-    }
 
 
 

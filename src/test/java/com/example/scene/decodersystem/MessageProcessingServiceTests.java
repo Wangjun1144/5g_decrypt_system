@@ -7,15 +7,20 @@ import com.example.procedure.initial_acess.*;
 import com.example.procedure.parser.TsharkJsonMessageParser;
 import com.example.procedure.service.MsgProcessing_Service;
 import com.example.procedure.model.ProcedureTypeEnum;
+import com.example.procedure.streaming.layers.ChainsInspectConsumer;
+import com.example.procedure.streaming.layers.LayersSelectiveParser;
 import com.example.procedure.util.SignalingMessagePrinter;
+import com.example.procedure.wireshark.TsharkRunner;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -420,5 +425,100 @@ class MessageProcessingServiceTests {
         // 你可以在 replayMessages 里改成收集到一个 List<MessageProcessingResult> 再返回，
         // 然后在这里做各种 assert。
     }
+
+    @Autowired
+    private TsharkRunner tsharkRunner;
+
+    @Test
+    void contextLoads() throws Exception{
+        String tsharkJson =
+                """
+                [
+                  {
+                    "_index": "x",
+                    "_type": "y",
+                    "_source": {
+                      "layers": {
+                        "frame": {
+                          "frame.number": "10",
+                          "frame.time_epoch": "1700000000.123",
+                          "frame.protocols": "eth:ip:sctp:nas-5gs:nr-rrc"
+                        },
+                        "nas-5gs_raw": ["AA11"],
+                        "nas-5gs": {"nas.msg": "first"},
+                        "nas-5gs_raw": ["BB22"],
+                        "nas-5gs": {"nas.msg": "second"},
+                        "nr-rrc_raw": ["CC33"],
+                        "nr-rrc": {"rrc.msg": "hello"}
+                      }
+                    }
+                  }
+                ]
+                """;
+        Path pcap = Path.of("5g_srsRAN_n78_gain40_amf.pcapng");
+
+        Set<String> wanted = Set.of(
+                "nas-5gs_raw",
+                "nas-5gs",
+                "nr-rrc",
+                "mac-nr",
+                "mac-nr_raw",
+                "ngap",
+                "http2",
+                "json.object"
+
+        );
+
+        // 你希望启用并严格配对抓取的 raw layer（*_raw 必须紧挨着逻辑层才会被消费）
+        Set<String> enabledRaw = Set.of(
+                "nas-5gs_raw",
+                "mac-nr_raw"
+        );
+
+        tsharkRunner.decodeToJsonStream(pcap, in -> {
+            try {
+                ChainsInspectConsumer consumer = new ChainsInspectConsumer(this::processOne);
+                LayersSelectiveParser.parsePackets(in, wanted, enabledRaw, consumer);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private void processOne(SignalingMessage msg) {
+        ueIdBinder.handle(msg, m -> {
+            MessageProcessingResult result = messageProcessingService.process(m);
+            SignalingMessagePrinter.printAndWriteToFile(
+                    m, Paths.get("logs/signaling_dump.log"), true
+            );
+        });
+    }
+
+    private void processPcap(Path pcap, Set<String> wanted, Set<String> enabledRaw) throws Exception {
+        ChainsInspectConsumer consumer = new ChainsInspectConsumer(this::processOne);
+
+        tsharkRunner.decodeToJsonStream(pcap, in -> {
+            try {
+                LayersSelectiveParser.parsePackets(in, wanted, enabledRaw, consumer);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    @Test
+    void processTwoPcaps() throws Exception {
+        Path pcap1 = Path.of("gnb_capture.pcap");
+        Path pcap2 = Path.of("5g_srsRAN_n78_gain40_amf.pcapng");
+
+        Set<String> wanted = Set.of("nas-5gs_raw","nas-5gs","nr-rrc","mac-nr","mac-nr_raw","ngap","http2","json.object");
+        Set<String> enabledRaw = Set.of("nas-5gs_raw","mac-nr_raw");
+
+        processPcap(pcap1, wanted, enabledRaw);
+        processPcap(pcap2, wanted, enabledRaw);
+    }
+
+
+
 
 }

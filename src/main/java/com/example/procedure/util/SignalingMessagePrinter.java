@@ -26,7 +26,6 @@ public class SignalingMessagePrinter {
         sb.append("SignalingMessage {\n");
 
         appendKV(sb, 1, "frameNo", msg.getFrameNo());
-        appendKV(sb, 1, "protocolLayer", msg.getProtocolLayer());
         appendKV(sb, 1, "msgType", msg.getMsgType());
         appendKV(sb, 1, "timestamp", msg.getTimestamp());
 
@@ -34,14 +33,11 @@ public class SignalingMessagePrinter {
         appendKV(sb, 1, "msgId", msg.getMsgId());
         appendKV(sb, 1, "ueId", msg.getUeId());
         appendKV(sb, 1, "iface", msg.getIface());
-        appendKV(sb, 1, "direction(resolved)", safeCall(msg::getDirection));
         appendKV(sb, 1, "direction(raw)", msg.getDirection()); // Lombok field getter 也会叫 getDirection()，所以这里可能冲突
         // ↑ 注意：你类里手写了 getDirection()，会覆盖 Lombok 的 getter，因此 direction(raw) 可能取不到。
         //   如果你确实想打印原始字段 direction，建议把字段改名 rawDirection，或新增 getRawDirection()。
 
         // 加密信息（你类里有计算逻辑）
-        appendKV(sb, 1, "encrypted(calc)", safeCallBool(msg::isEncrypted));
-        appendKV(sb, 1, "encryptedType(calc)", safeCall(msg::getEncryptedType));
         appendKV(sb, 1, "encrypted(field)", msg.getEncrypted());
 
         appendKV(sb, 1, "decryptPlainHex", msg.getDecryptPlainHex());

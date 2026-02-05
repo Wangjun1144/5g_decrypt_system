@@ -45,7 +45,7 @@ public class MsgProcessing_Service {
     public MessageProcessingResult process(SignalingMessage msg){
 
         // 0) 先拿加密状态（你已在 msg.isEncrypted() / getEncryptedType() 里能算出来）
-        boolean encrypted = msg.isEncrypted();
+        boolean encrypted = msg.getEncrypted();
         String encType = msg.getEncryptedType(); // NAS / PDCP / NAS+PDCP / NONE
 
 
@@ -80,7 +80,6 @@ public class MsgProcessing_Service {
             }
 
         }else{
-
             if (encrypted) {
                 tryDecryptByType(msg, encType, ctx); // ⭐ 核心：按类型解密并写回
             }
