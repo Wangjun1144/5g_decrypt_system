@@ -59,6 +59,6 @@ public class SignalingMessage {
     /** 解密相关的 MAC（可存服务返回的 mac 或者本次校验使用的 mac） */
     private String decryptMacHex;
 
-
+    private boolean decrypted;
 
 }

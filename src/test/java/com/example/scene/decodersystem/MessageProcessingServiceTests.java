@@ -511,7 +511,8 @@ class MessageProcessingServiceTests {
         Path pcap1 = Path.of("gnb_capture.pcap");
         Path pcap2 = Path.of("5g_srsRAN_n78_gain40_amf.pcapng");
 
-        Set<String> wanted = Set.of("nas-5gs_raw","nas-5gs","nr-rrc","mac-nr","mac-nr_raw","ngap","http2","json.object");
+        Set<String> wanted = Set.of("nas-5gs_raw","nas-5gs","nr-rrc",
+                "mac-nr","mac-nr_raw","ngap","http2","json.object");
         Set<String> enabledRaw = Set.of("nas-5gs_raw","mac-nr_raw");
 
         processPcap(pcap1, wanted, enabledRaw);

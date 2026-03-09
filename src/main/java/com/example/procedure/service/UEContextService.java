@@ -158,6 +158,35 @@ public class UEContextService {
                     String kamf = KeyDerivationNative.kamfFromKseaf(imsi, abba, kseaf);
                     if (kamf != null && !kamf.isEmpty()) {
                         ctx.setKAmf(kamf);
+                        // --- 补偿推导：如果此时已有 NAS 算法号，则用新到的 KAMF 推 KNasEnc/KNasInt ---
+                        String kamf2 = ctx.getKAmf();
+                        if (kamf2 != null && !kamf2.isEmpty()) {
+                            boolean needEnc = (ctx.getKNasEnc() == null || ctx.getKNasEnc().isEmpty());
+                            boolean needInt = (ctx.getKNasInt() == null || ctx.getKNasInt().isEmpty());
+
+                            String nasEncAlgStr = ctx.getNasCipherAlg();
+                            String nasIntAlgStr = ctx.getNasIntAlg();
+
+                            if ((needEnc || needInt) &&
+                                    nasEncAlgStr != null && !nasEncAlgStr.isEmpty() &&
+                                    nasIntAlgStr != null && !nasIntAlgStr.isEmpty()) {
+
+                                int encNo = parseAlgNo123(nasEncAlgStr);
+                                int intNo = parseAlgNo123(nasIntAlgStr);
+                                int encAlgIdentity = mapAlgIdentity(encNo);
+                                int intAlgIdentity = mapAlgIdentity(intNo);
+
+                                if (needEnc) {
+                                    String kNasEnc = KeyDerivationNative.algorithmKeyDerivation(0x01, encAlgIdentity, kamf2);
+                                    if (kNasEnc != null && !kNasEnc.isEmpty()) ctx.setKNasEnc(kNasEnc);
+                                }
+                                if (needInt) {
+                                    String kNasInt = KeyDerivationNative.algorithmKeyDerivation(0x02, intAlgIdentity, kamf2);
+                                    if (kNasInt != null && !kNasInt.isEmpty()) ctx.setKNasInt(kNasInt);
+                                }
+                            }
+                        }
+
                     }
                 }
 
@@ -237,6 +266,35 @@ public class UEContextService {
                 if (securityKeyHex != null && !securityKeyHex.isEmpty()) {
                     ctx.setSecurityKeyHex(securityKeyHex);
                     ctx.setAttachState("INITIAL_CONTEXT_SETUP");
+                    // --- 补偿推导：如果此时已有 RRC 算法号，则用新到的 KGNB 推 KRrcEnc/KRrcInt ---
+                    String kgnb = ctx.getSecurityKeyHex();
+                    if (kgnb != null && !kgnb.isEmpty()) {
+                        // 只有在还没推出来时才推（幂等）
+                        boolean needEnc = (ctx.getKRrcEnc() == null || ctx.getKRrcEnc().isEmpty());
+                        boolean needInt = (ctx.getKRrcInt() == null || ctx.getKRrcInt().isEmpty());
+
+                        String cipherAlgStr = ctx.getRrcCipherAlg();
+                        String integrityAlgStr = ctx.getRrcIntAlg();
+
+                        if ((needEnc || needInt) &&
+                                cipherAlgStr != null && !cipherAlgStr.isEmpty() &&
+                                integrityAlgStr != null && !integrityAlgStr.isEmpty()) {
+
+                            int encNo = parseAlgNo123(cipherAlgStr);
+                            int intNo = parseAlgNo123(integrityAlgStr);
+                            int encAlgIdentity = mapAlgIdentity(encNo);
+                            int intAlgIdentity = mapAlgIdentity(intNo);
+
+                            if (needEnc) {
+                                String kRrcEnc = KeyDerivationNative.algorithmKeyDerivation(0x03, encAlgIdentity, kgnb);
+                                if (kRrcEnc != null && !kRrcEnc.isEmpty()) ctx.setKRrcEnc(kRrcEnc);
+                            }
+                            if (needInt) {
+                                String kRrcInt = KeyDerivationNative.algorithmKeyDerivation(0x04, intAlgIdentity, kgnb);
+                                if (kRrcInt != null && !kRrcInt.isEmpty()) ctx.setKRrcInt(kRrcInt);
+                            }
+                        }
+                    }
                 }
             }
         }

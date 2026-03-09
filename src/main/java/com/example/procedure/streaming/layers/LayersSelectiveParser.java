@@ -931,7 +931,7 @@ public final class LayersSelectiveParser {
                 nas.setSecurityHeaderType(value);
                 nas.putFieldPath("nas-5gs.security_header_type", pathStr);
                 st.sht = value;
-                if ("4".equals(value)) {
+                if ("4".equals(value) || "2".equals(value)) {
                     nas.setEncrypted(true);
                     ctx.result.setEncrypted(true);
                     ctx.markNasEncrypted();
