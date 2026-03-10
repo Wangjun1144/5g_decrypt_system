@@ -810,6 +810,12 @@ public final class LayersSelectiveParser {
                 pdcp.setSeqnum(value);
                 pdcp.putFieldPath("pdcp-nr.seq-num", pathStr);
                 break;
+
+            case "pdcp-nr.Bearer-type":
+                pdcp.setBearerType(value);
+                pdcp.setBearerName(pdcp.mapPdcpBearerType(value));
+                pdcp.putFieldPath("pdcp-nr.Bearer-type", pathStr);
+                break;
             default:
                 break;
         }

@@ -51,11 +51,23 @@ public class PdcpInfo {
      */
     private String macHex;
 
+    private String bearerType;   // tshark 原始值，如 "1"
+    private String bearerName;   // 归一化值，如 "DCCH" / "CCCH" / "UNKNOWN"
+
     /** 记录每个命中字段的 JSON 路径，方便回溯 */
     private Map<String, String> fieldPaths = new LinkedHashMap<>();
 
     public void putFieldPath(String fieldKey, String path) {
         this.fieldPaths.put(fieldKey, path);
+    }
+
+    public String mapPdcpBearerType(String value) {
+        if (value == null) return "UNKNOWN";
+        return switch (value.trim()) {
+            case "0" -> "CCCH";
+            case "1" -> "DCCH";
+            default -> "UNKNOWN";
+        };
     }
 }
 

@@ -236,99 +236,85 @@ public class MsgProcessing_Service {
 
 
     private DecryptAttemptResult decryptNasLayers(String url, SignalingMessage msg, UEContext ctx) {
-        if (msg.getNasList() == null) return DecryptAttemptResult.skip();
+        if (msg.getNasList() == null || msg.getNasList().isEmpty()) {
+            return DecryptAttemptResult.skip();
+        }
 
-        boolean hasEncryptedNas = false;
-        boolean anySuccess = false;
+        // 每轮只解一个目标：找到第一条仍然加密的 NAS
+        for (int i = 0; i < msg.getNasList().size(); i++) {
+            NasInfo nas = msg.getNasList().get(i);
+            if (nas == null || !nas.isEncrypted()) {
+                continue;
+            }
 
-        for (NasInfo nas : msg.getNasList()) {
-            if (nas == null || !nas.isEncrypted()) continue;
-
-            hasEncryptedNas = true;
-
-            // 必要参数校验
             // 缺 key：等待
-            if (isBlank(ctx.getKNasEnc()) || isBlank(ctx.getKNasInt())) {
+            if (ctx == null || isBlank(ctx.getKNasEnc()) || isBlank(ctx.getKNasInt())) {
                 return DecryptAttemptResult.waiting(DecryptAttemptResult.WaitReason.WAIT_NAS_KEYS);
             }
 
-            // 缺算法号也可以当 WAITING（否则你 map 默认 NEA1/NIA1 可能导致错误解密）
+            // 缺算法号：等待
             if (isBlank(ctx.getNasCipherAlg()) || isBlank(ctx.getNasIntAlg())) {
                 return DecryptAttemptResult.waiting(DecryptAttemptResult.WaitReason.WAIT_ALG);
             }
 
-            // 缺密文/缺mac：这条解不了，继续看下一条
-            if (isBlank(nas.getCipherTextHex()) || isBlank(nas.getMsgAuthCodeHex())) continue;
+            // 缺密文或 mac，这条 NAS 暂时解不了，继续找下一条
+            if (isBlank(nas.getCipherTextHex()) || isBlank(nas.getMsgAuthCodeHex())) {
+                continue;
+            }
 
             DecryptClient.DecryptRequest req = new DecryptClient.DecryptRequest();
             req.messageId = msg.getMsgId();
             req.ueId = msg.getUeId();
-            req.contextRef = msg.getUeId(); // 或者你自己的上下文引用
+            req.contextRef = msg.getUeId();
             req.layer = "NAS";
 
             req.encKey = ctx.getKNasEnc();
             req.intKey = ctx.getKNasInt();
 
-            req.encAlgo = mapNasEncAlgo(ctx.getNasCipherAlg()); // "NEA1/2/3"
-            req.intAlgo = mapNasIntAlgo(ctx.getNasIntAlg());    // "NIA1/2/3"
+            req.encAlgo = mapNasEncAlgo(ctx.getNasCipherAlg());
+            req.intAlgo = mapNasIntAlgo(ctx.getNasIntAlg());
 
-            // 这两个你需要补：count / bearer
-            req.count = nas.getSeqNoInt();   // TODO
-            req.bearer = 1;                            // NAS 通常 bearer=0（按你服务约定）
-            req.direction = msg.getDirection();         // "UL"/"DL"
+            req.count = nas.getSeqNoInt();
+            req.bearer = 1; // 你后续再按服务约定细化
+            req.direction = msg.getDirection();
 
             req.ciphertext = nas.getCipherTextHex();
-            req.mac = nas.getMsgAuthCodeHex();          // 建议传纯 hex（不要 0x）
+            req.mac = nas.getMsgAuthCodeHex();
             req.dataLength = 0;
-
 
             String respJson;
             try {
                 respJson = DecryptClient.decrypt(url, req);
             } catch (Exception e) {
-                // 解密失败：写回错误信息（建议你在 NasInfo 加 decryptStatus/decryptError/plainTextHex）
-                // nas.setDecryptStatus(-1);
-                // nas.setDecryptError(e.getMessage());
                 return DecryptAttemptResult.failed("NAS decrypt http failed: " + e.getMessage());
             }
 
-            // 假设你在类里有 ObjectMapper（Spring 注入或 new）
             DecryptResponse resp;
             try {
                 resp = objectMapper.readValue(respJson, DecryptResponse.class);
             } catch (Exception ex) {
-                // 返回不是合法 JSON 或字段不匹配
-                // msg.setDecryptPlainHex(null);
-                // msg.setDecryptMacHex(null);
                 return DecryptAttemptResult.failed("NAS decrypt invalid json: " + ex.getMessage());
             }
 
-            if (resp != null && resp.getDecryptStatus()!= null && (resp.getDecryptStatus().equals("DECRYPT_SUCCESS")) ) {
-                // ✅ 解密成功：写回 message
-                msg.setDecryptPlainHex(resp.getPlainData());
-                msg.setDecryptMacHex(normalizeHex(resp.getPlainMac())); // 建议归一化（去0x/冒号/空格）
-                anySuccess = true;
-                // 如果你还想把明文写回对应 NAS 层（多层情况下更推荐）
-                // nas.setPlainTextHex(resp.getPlaintext());
-                // nas.setDecryptMacHex(normalizeHex(resp.getMac()));
+            if (resp != null
+                    && resp.getDecryptStatus() != null
+                    && resp.getDecryptStatus().equals("DECRYPT_SUCCESS")) {
 
-            } else {
-                // ❌ 解密失败：你也可以记录失败信息（需要你在 SignalingMessage 加字段）
-                // msg.setDecryptError(resp != null ? resp.getMessage() : "decrypt failed");
+                msg.setDecryptPlainHex(resp.getPlainData());
+                msg.setDecryptMacHex(normalizeHex(resp.getPlainMac()));
+
+                // 关键：记录这次解的是哪条 NAS
+                msg.setDecryptTargetLayer("NAS");
+                msg.setDecryptTargetNasIndex(i);
+
+                return DecryptAttemptResult.ok();
             }
 
-
-            // TODO: 解析 respJson 并写回 nas
-            // 例如：
-            // DecryptResponse resp = MAPPER.readValue(respJson, DecryptResponse.class);
-            // if (resp.status == 0) nas.setPlainTextHex(resp.plaintextHex);
-
+            return DecryptAttemptResult.failed("NAS decrypt failed");
         }
-        if (!hasEncryptedNas) return DecryptAttemptResult.skip();
-        if (anySuccess) return DecryptAttemptResult.ok();
 
-        // 有加密NAS但没有成功：先当 FAILED（你后续做 pending/drain 时可以更细分）
-        return DecryptAttemptResult.failed("NAS decrypt failed (no layer success)");
+        // 有 nasList，但没有可解目标
+        return DecryptAttemptResult.skip();
     }
 
 
@@ -534,6 +520,10 @@ public class MsgProcessing_Service {
                         appendDecryptPath(msg.getDecryptPath(), normalizeEncType(decryptedLayer))
                 );
 
+                // 清理本轮目标标记
+                msg.setDecryptTargetLayer(null);
+                msg.setDecryptTargetNasIndex(null);
+
                 // 3) 保留回流后识别出的真实加密状态
                 if (msg.getEncrypted() == null) {
                     msg.setEncrypted(false);
@@ -609,63 +599,98 @@ public class MsgProcessing_Service {
         if (originalMsg.getNasList() == null || originalMsg.getNasList().isEmpty()) return;
         if (reparsedMsg.getNasList() == null || reparsedMsg.getNasList().isEmpty()) return;
 
-        NasInfo decodedNas = reparsedMsg.getNasList().get(0);
-        if (decodedNas == null) return;
-
-        for (NasInfo originalNas : originalMsg.getNasList()) {
-            if (originalNas == null) continue;
-            if (!originalNas.isEncrypted()) continue;
-
-            // 保留原始密文痕迹
-            if (isBlank(originalNas.getOriginalFullNasPduHex())) {
-                originalNas.setOriginalFullNasPduHex(originalNas.getFullNasPduHex());
-            }
-            if (isBlank(originalNas.getOriginalCipherTextHex())) {
-                originalNas.setOriginalCipherTextHex(originalNas.getCipherTextHex());
-            }
-
-            // 用当前已知明文填回去
-            if (!isBlank(originalMsg.getDecryptPlainHex())) {
-                originalNas.setDecryptedTexHex(originalMsg.getDecryptPlainHex());
-            }
-
-            // 用回流解析出的 NAS 语义字段替换原来的那条 NAS
-            copyNasSemanticFields(originalNas, decodedNas);
-
-            // 这条 NAS 现在已经是明文态
-            originalNas.setEncrypted(false);
-            originalNas.setCipherTextHex(null);
-
-            // fullNasPduHex 现在代表“当前最终 NAS 视图”
-            if (!isBlank(decodedNas.getFullNasPduHex())) {
-                originalNas.setFullNasPduHex(decodedNas.getFullNasPduHex());
-            }
-
+        Integer targetIdx = originalMsg.getDecryptTargetNasIndex();
+        if (targetIdx == null || targetIdx < 0 || targetIdx >= originalMsg.getNasList().size()) {
             return;
         }
+
+        NasInfo outerNas = originalMsg.getNasList().get(targetIdx);
+        if (outerNas == null) return;
+
+        // 1) 保留原始密文痕迹
+        if (isBlank(outerNas.getOriginalFullNasPduHex())) {
+            outerNas.setOriginalFullNasPduHex(outerNas.getFullNasPduHex());
+        }
+        if (isBlank(outerNas.getOriginalCipherTextHex())) {
+            outerNas.setOriginalCipherTextHex(outerNas.getCipherTextHex());
+        }
+
+        // 2) 当前这一轮解出来的明文，回填到“外层壳”的 decryptedTexHex
+        if (!isBlank(originalMsg.getDecryptPlainHex())) {
+            outerNas.setDecryptedTexHex(originalMsg.getDecryptPlainHex());
+        }
+
+        // 3) 外层 NAS 不再标记为“待解密”，但外壳保留
+        outerNas.setEncrypted(false);
+        outerNas.setCipherTextHex(null);
+
+        // 注意：
+        // 不要把 decodedNas 的语义字段覆盖 outerNas
+        // outerNas 代表安全保护外壳，不是里面真正的 plain NAS
+
+        // 4) 把回流出来的内层 NAS 列表插入到外壳后面
+        List<NasInfo> decodedNasList = reparsedMsg.getNasList();
+        if (decodedNasList == null || decodedNasList.isEmpty()) {
+            return;
+        }
+
+        int insertPos = targetIdx + 1;
+        for (NasInfo decodedNas : decodedNasList) {
+            NasInfo cloned = cloneNasInfo(decodedNas);
+            if (cloned != null) {
+                originalMsg.getNasList().add(insertPos, cloned);
+                insertPos++;
+            }
+        }
+
+        // 5) 重排 sequence，避免 sequence 混乱
+        resequenceNasList(originalMsg.getNasList());
     }
 
-    private void copyNasSemanticFields(NasInfo target, NasInfo source) {
-        if (target == null || source == null) return;
+    private NasInfo cloneNasInfo(NasInfo source) {
+        if (source == null) return null;
 
-        target.setNasNode(source.getNasNode());
-        target.setEpd(source.getEpd());
-        target.setSpareHalfOctet(source.getSpareHalfOctet());
-        target.setSecurityHeaderType(source.getSecurityHeaderType());
-        target.setMsgAuthCodeHex(source.getMsgAuthCodeHex());
-        target.setSeqNo(source.getSeqNo());
+        NasInfo n = new NasInfo();
+        n.setSequence(source.getSequence());
+        n.setNasNode(source.getNasNode());
+        n.setFullNasPduHex(source.getFullNasPduHex());
+        n.setCipherTextHex(source.getCipherTextHex());
+        n.setDecryptedTexHex(source.getDecryptedTexHex());
 
-        target.setMmMessageType(source.getMmMessageType());
-        target.setNas_cipheringAlgorithm(source.getNas_cipheringAlgorithm());
-        target.setNas_integrityProtAlgorithm(source.getNas_integrityProtAlgorithm());
+        n.setOriginalFullNasPduHex(source.getOriginalFullNasPduHex());
+        n.setOriginalCipherTextHex(source.getOriginalCipherTextHex());
 
-        target.setGuamiMcc(source.getGuamiMcc());
-        target.setGuamiMnc(source.getGuamiMnc());
-        target.setTmsi(source.getTmsi());
-        target.setRegType5gs(source.getRegType5gs());
+        n.setEncrypted(source.isEncrypted());
+
+        n.setEpd(source.getEpd());
+        n.setSpareHalfOctet(source.getSpareHalfOctet());
+        n.setSecurityHeaderType(source.getSecurityHeaderType());
+        n.setMsgAuthCodeHex(source.getMsgAuthCodeHex());
+        n.setSeqNo(source.getSeqNo());
+
+        n.setMmMessageType(source.getMmMessageType());
+        n.setNas_cipheringAlgorithm(source.getNas_cipheringAlgorithm());
+        n.setNas_integrityProtAlgorithm(source.getNas_integrityProtAlgorithm());
+
+        n.setGuamiMcc(source.getGuamiMcc());
+        n.setGuamiMnc(source.getGuamiMnc());
+        n.setTmsi(source.getTmsi());
+        n.setRegType5gs(source.getRegType5gs());
 
         if (source.getFieldPaths() != null && !source.getFieldPaths().isEmpty()) {
-            target.setFieldPaths(new LinkedHashMap<>(source.getFieldPaths()));
+            n.setFieldPaths(new LinkedHashMap<>(source.getFieldPaths()));
+        }
+
+        return n;
+    }
+
+    private void resequenceNasList(List<NasInfo> nasList) {
+        if (nasList == null) return;
+        int seq = 1;
+        for (NasInfo nas : nasList) {
+            if (nas != null) {
+                nas.setSequence(seq++);
+            }
         }
     }
 
@@ -684,10 +709,33 @@ public class MsgProcessing_Service {
             originalMsg.setProtocolLayer(reparsedMsg.getProtocolLayer());
         }
 
-        // 如果回流后仍有 pdcpInfo，也可以更新
         if (reparsedMsg.getPdcpInfo() != null) {
             originalMsg.setPdcpInfo(reparsedMsg.getPdcpInfo());
         }
+
+        // 关键补丁：PDCP 解密回流后如果解析出了 NAS，必须带回原消息
+        if (reparsedMsg.getNasList() != null && !reparsedMsg.getNasList().isEmpty()) {
+            appendNasList(originalMsg, reparsedMsg.getNasList());
+        }
+    }
+
+    private void appendNasList(SignalingMessage originalMsg, List<NasInfo> incomingNasList) {
+        if (originalMsg == null || incomingNasList == null || incomingNasList.isEmpty()) {
+            return;
+        }
+
+        if (originalMsg.getNasList() == null) {
+            originalMsg.setNasList(new java.util.ArrayList<>());
+        }
+
+        for (NasInfo nas : incomingNasList) {
+            NasInfo cloned = cloneNasInfo(nas);
+            if (cloned != null) {
+                originalMsg.getNasList().add(cloned);
+            }
+        }
+
+        resequenceNasList(originalMsg.getNasList());
     }
 
 }

@@ -68,4 +68,10 @@ public class SignalingMessage {
     /** 记录已经成功解开的层级路径，例如 PDCP->NAS。 */
     private String decryptPath;
 
+    /** 本轮解密的目标层：NAS / PDCP */
+    private String decryptTargetLayer;
+
+    /** 如果本轮解的是 NAS，记录目标在 nasList 中的下标 */
+    private Integer decryptTargetNasIndex;
+
 }

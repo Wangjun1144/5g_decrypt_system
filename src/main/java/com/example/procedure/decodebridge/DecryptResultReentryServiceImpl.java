@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
+import com.example.procedure.parser.PdcpInfo;
 
 @Service
 public class DecryptResultReentryServiceImpl implements DecryptResultReentryService {
@@ -55,10 +56,36 @@ public class DecryptResultReentryServiceImpl implements DecryptResultReentryServ
         if ("NAS".equalsIgnoreCase(encType)) {
             return "NAS_5GS";
         }
+
         if ("PDCP".equalsIgnoreCase(encType) || "NAS+PDCP".equalsIgnoreCase(encType)) {
+            PdcpInfo pdcp = msg.getPdcpInfo();
+            if (pdcp == null) {
+                return "NR_RRC_UL_DCCH";
+            }
+
+            String dir = upper(pdcp.getDirection());
+            String bearer = upper(pdcp.getBearerName());
+
+            if ("CCCH".equals(bearer)) {
+                if ("DL".equals(dir)) return "NR_RRC_DL_CCCH";
+                return "NR_RRC_UL_CCCH";
+            }
+
+            if ("DCCH".equals(bearer)) {
+                if ("DL".equals(dir)) return "NR_RRC_DL_DCCH";
+                return "NR_RRC_UL_DCCH";
+            }
+
+            // 默认兜底
+            if ("DL".equals(dir)) return "NR_RRC_DL_DCCH";
             return "NR_RRC_UL_DCCH";
         }
+
         return "NR_RRC_UL_DCCH";
+    }
+
+    private String upper(String s) {
+        return s == null ? "" : s.trim().toUpperCase();
     }
 
     private String buildTraceId(SignalingMessage msg) {
