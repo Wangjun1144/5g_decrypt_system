@@ -26,7 +26,14 @@ public class NasInfo {
     /** 截完安全头之后剩下的密文部分 */
     private String cipherTextHex;
 
-    private String decyptedTexHex;
+    private String decryptedTexHex;
+
+
+    /** 原始完整 NAS PDU（保留最初抓包看到的值） */
+    private String originalFullNasPduHex;
+
+    /** 原始密文部分（保留最初抓包看到的值） */
+    private String originalCipherTextHex;
 
 
     /** 该 NAS 是否已经加密（security protected） */

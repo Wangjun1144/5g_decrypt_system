@@ -26,6 +26,9 @@ public class PdcpInfo {
 
     private String decyptedTexHex;
 
+    /** 原始 PDCP 密文（保留最初抓包看到的值） */
+    private String originalSignallingDataHex;
+
     private String direction;   // UL / DL
 
     private String seqnum;

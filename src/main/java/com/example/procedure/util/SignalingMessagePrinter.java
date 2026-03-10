@@ -215,7 +215,7 @@ public class SignalingMessagePrinter {
         appendKV(sb, level, "encrypted", n.isEncrypted());
         appendKV(sb, level, "fullNasPduHex", n.getFullNasPduHex());
         appendKV(sb, level, "cipherTextHex", n.getCipherTextHex());
-        appendKV(sb, level, "decyptedTexHex", n.getDecyptedTexHex());
+        appendKV(sb, level, "decyptedTexHex", n.getDecryptedTexHex());
 
         appendKV(sb, level, "epd", n.getEpd());
         appendKV(sb, level, "spareHalfOctet", n.getSpareHalfOctet());

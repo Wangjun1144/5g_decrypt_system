@@ -59,6 +59,13 @@ public class SignalingMessage {
     /** 解密相关的 MAC（可存服务返回的 mac 或者本次校验使用的 mac） */
     private String decryptMacHex;
 
+    /** 是否至少成功解密过一层。注意：不等于“内部已经完全无加密层”。 */
     private boolean decrypted;
+
+    /** 当前消息已经经历过多少层解密回流。0 表示原始消息。 */
+    private Integer decryptDepth;
+
+    /** 记录已经成功解开的层级路径，例如 PDCP->NAS。 */
+    private String decryptPath;
 
 }

@@ -56,9 +56,9 @@ public class DecryptResultReentryServiceImpl implements DecryptResultReentryServ
             return "NAS_5GS";
         }
         if ("PDCP".equalsIgnoreCase(encType) || "NAS+PDCP".equalsIgnoreCase(encType)) {
-            return "RRC_UL_DCCH";
+            return "NR_RRC_UL_DCCH";
         }
-        return "RRC_UL_DCCH";
+        return "NR_RRC_UL_DCCH";
     }
 
     private String buildTraceId(SignalingMessage msg) {

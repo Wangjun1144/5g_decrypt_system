@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Paths;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
@@ -26,6 +27,8 @@ import java.util.List;
 public class MsgProcessing_Service {
     private final UEContextService ueContextService;
     private final ObjectMapper objectMapper;
+
+    private static final int MAX_DECRYPT_DEPTH = 4;
 
 
     private static final Logger log = LoggerFactory.getLogger(MsgProcessing_Service.class);
@@ -81,12 +84,23 @@ public class MsgProcessing_Service {
             if (encrypted) {
                 DecryptAttemptResult dr = tryDecryptByType(msg, encType, ctx);
                 if (dr.getStatus() == DecryptAttemptResult.Status.OK) {
-                    // 标记解密完成，重新走一遍流程（第二次）
                     try {
-                        reenterDecryptedMessage(msg);
+                        reenterDecryptedMessage(msg, encType);
                     } catch (Exception e) {
                         log.error("Decrypt reentry failed: ueId={}, msgId={}, encType={}, err={}",
                                 msg.getUeId(), msg.getMsgId(), encType, e.getMessage(), e);
+                        return new MessageProcessingResult(
+                                msg.getUeId(), msg.getMsgType(), category, procedureId, procedureTypeCode
+                        );
+                    }
+
+                    // 回流补丁已经合并回原 msg
+                    // 如果内部还存在加密层，则继续对同一个 msg 递归处理
+                    if (Boolean.TRUE.equals(msg.getEncrypted())) {
+                        log.info("Decrypt recursion continue: ueId={}, msgId={}, depth={}, encType={}, path={}",
+                                msg.getUeId(), msg.getMsgId(), safeDecryptDepth(msg),
+                                msg.getEncryptedType(), msg.getDecryptPath());
+                        return process(msg);
                     }
                 }
 
@@ -128,15 +142,24 @@ public class MsgProcessing_Service {
             if (encrypted) {
                 DecryptAttemptResult dr = tryDecryptByType(msg, encType, ctx);
                 if (dr.getStatus() == DecryptAttemptResult.Status.OK) {
-                    // 标记解密完成，重新走一遍流程（第二次）
-                    msg.setDecrypted(true);
                     try {
-                        reenterDecryptedMessage(msg);
+                        reenterDecryptedMessage(msg, encType);
                     } catch (Exception e) {
                         log.error("Decrypt reentry failed: ueId={}, msgId={}, encType={}, err={}",
                                 msg.getUeId(), msg.getMsgId(), encType, e.getMessage(), e);
+                        return new MessageProcessingResult(
+                                msg.getUeId(), msg.getMsgType(), category, procedureId, procedureTypeCode
+                        );
                     }
-                    // 暂不下放，留给后续二次处理统一入口
+
+                    // 回流补丁已经合并回原 msg
+                    // 如果内部还存在加密层，则继续对同一个 msg 递归处理
+                    if (Boolean.TRUE.equals(msg.getEncrypted())) {
+                        log.info("Decrypt recursion continue: ueId={}, msgId={}, depth={}, encType={}, path={}",
+                                msg.getUeId(), msg.getMsgId(), safeDecryptDepth(msg),
+                                msg.getEncryptedType(), msg.getDecryptPath());
+                        return process(msg);
+                    }
                 }
 
                 if (dr.getStatus() == DecryptAttemptResult.Status.WAITING) {
@@ -174,8 +197,18 @@ public class MsgProcessing_Service {
 
 
     private DecryptAttemptResult tryDecryptByType(SignalingMessage msg, String encType, UEContext ctx) {
-        // 已解密的消息第二次进入流程时，不要再解密
-        if (msg.isDecrypted()) return DecryptAttemptResult.skip();
+        String normalizedEncType = normalizeEncType(encType);
+        if ("NONE".equals(normalizedEncType)) {
+            return DecryptAttemptResult.skip();
+        }
+
+        int depth = safeDecryptDepth(msg);
+        if (depth >= MAX_DECRYPT_DEPTH) {
+            return DecryptAttemptResult.failed(
+                    "decrypt max depth reached: " + depth + ", encType=" + normalizedEncType
+            );
+        }
+
         String url = "http://127.0.0.1:8004/decrypt";
 
         if ("NAS".equals(encType)) {
@@ -187,12 +220,12 @@ public class MsgProcessing_Service {
         }
 
         if ("NAS+PDCP".equals(encType)) {
-            // 建议：先 NAS，再 AS（可选）
-            DecryptAttemptResult r1 = decryptNasLayers(url, msg, ctx);
-            if (r1.getStatus() != DecryptAttemptResult.Status.OK &&
-                    r1.getStatus() != DecryptAttemptResult.Status.SKIP) {
-                return r1;
-            }
+            DecryptAttemptResult nas = decryptNasLayers(url, msg, ctx);
+            if (nas.getStatus() == DecryptAttemptResult.Status.OK) return nas;
+            if (nas.getStatus() == DecryptAttemptResult.Status.WAITING) return nas;
+
+            DecryptAttemptResult pdcp = decryptAs(url, msg, ctx);
+            return pdcp;
             // decryptAs(url, msg); // 如果你也需要 PDCP/AS 明文再打开
         }
 
@@ -388,12 +421,6 @@ public class MsgProcessing_Service {
             SignalingMessage m = it.msg;
             if (m == null) continue;
 
-            // 如果它已经解密过，不需要再重试（防御）
-            if (m.isDecrypted()) {
-                ok++;
-                continue;
-            }
-
             // 如果 encType 是 NAS 但 NAS key 不 ready，则直接放回（避免不必要的 tryDecrypt）
             String encType = m.getEncryptedType();
             if ("NAS".equals(encType) && !canTryNas) {
@@ -415,11 +442,22 @@ public class MsgProcessing_Service {
             DecryptAttemptResult dr = tryDecryptByType(m, encType, ctx);
 
             if (dr.getStatus() == DecryptAttemptResult.Status.OK) {
-                m.setDecrypted(true);
+                if (safeDecryptDepth(m) >= MAX_DECRYPT_DEPTH) {
+                    log.warn("Pending decrypt max-depth reached(drop): ueId={}, msgId={}, encType={}, depth={}",
+                            ueId, m.getMsgId(), m.getEncryptedType(), safeDecryptDepth(m));
+                    continue;
+                }
                 ok++;
 
                 try {
-                    reenterDecryptedMessage(m);
+                    reenterDecryptedMessage(m, encType);
+
+                    // 如果回填后内部仍加密，则继续递归处理同一个消息
+                    if (Boolean.TRUE.equals(m.getEncrypted())) {
+                        process(m);
+                    } else {
+                        process(m);
+                    }
                 } catch (Exception e) {
                     log.error("Decrypt reentry failed: ueId={}, msgId={}, encType={}, err={}",
                             m.getUeId(), m.getMsgId(), encType, e.getMessage(), e);
@@ -455,19 +493,57 @@ public class MsgProcessing_Service {
                 ueId, items.size(), ok, back, fail, pendingMessageService.size(ueId));
     }
 
-    private void reenterDecryptedMessage(SignalingMessage msg) {
+    private void reenterDecryptedMessage(SignalingMessage msg, String decryptedLayer) {
         try {
             decryptResultReentryService.reenter(msg, reparsedMsg -> {
-                reparsedMsg.setDecrypted(true);
 
-                // 这里按你的 SignalingMessage 实际字段调整
-                reparsedMsg.setEncrypted(false);
-                reparsedMsg.setEncryptedType("NONE");
+                if ("NAS".equals(decryptedLayer)) {
+                    mergeNasDecodedContent(msg, reparsedMsg);
+                } else if ("PDCP".equals(decryptedLayer)){
+                    mergePdcpDecodedContent(msg, reparsedMsg);
+                } else if ("NAS+PDCP".equals(decryptedLayer)) {
+                    // 正常不会一次同时解两层，但兜底可以两边都试
+                    mergeNasDecodedContent(msg, reparsedMsg);
+                    mergePdcpDecodedContent(msg, reparsedMsg);
+                }
 
-                MessageProcessingResult result = process(reparsedMsg);
+                // 当前剩余加密状态由回流结果决定
+                msg.setEncrypted(
+                        reparsedMsg.getEncrypted() != null ? reparsedMsg.getEncrypted() : false
+                );
+                msg.setEncryptedType(
+                        !isBlank(reparsedMsg.getEncryptedType())
+                                ? normalizeEncType(reparsedMsg.getEncryptedType())
+                                : "NONE"
+                );
+
+                // 保留最近一轮解密结果
+                if (!isBlank(msg.getDecryptPlainHex())) {
+                    // 原值保留即可
+                } else if (!isBlank(reparsedMsg.getDecryptPlainHex())) {
+                    msg.setDecryptPlainHex(reparsedMsg.getDecryptPlainHex());
+                }
+
+                if (isBlank(msg.getDecryptMacHex()) && !isBlank(reparsedMsg.getDecryptMacHex())) {
+                    msg.setDecryptMacHex(reparsedMsg.getDecryptMacHex());
+                }
+                // 2) 记录：这条原始消息已经成功解开了一层
+                msg.setDecrypted(true);
+                msg.setDecryptDepth(safeDecryptDepth(msg) + 1);
+                msg.setDecryptPath(
+                        appendDecryptPath(msg.getDecryptPath(), normalizeEncType(decryptedLayer))
+                );
+
+                // 3) 保留回流后识别出的真实加密状态
+                if (msg.getEncrypted() == null) {
+                    msg.setEncrypted(false);
+                }
+                if (isBlank(msg.getEncryptedType())) {
+                    msg.setEncryptedType("NONE");
+                }
 
                 SignalingMessagePrinter.printAndWriteToFile(
-                        reparsedMsg,
+                        msg,
                         Paths.get("logs/signaling_reentry_dump.log"),
                         true
                 );
@@ -510,6 +586,108 @@ public class MsgProcessing_Service {
         if (v.startsWith("0x") || v.startsWith("0X")) v = v.substring(2);
         v = v.replace(":", "").replace(" ", "");
         return v.toLowerCase();
+    }
+
+    private int safeDecryptDepth(SignalingMessage msg) {
+        if (msg == null || msg.getDecryptDepth() == null) return 0;
+        return Math.max(msg.getDecryptDepth(), 0);
+    }
+
+    private String normalizeEncType(String encType) {
+        if (isBlank(encType)) return "NONE";
+        return encType.trim().toUpperCase();
+    }
+
+    private String appendDecryptPath(String oldPath, String layer) {
+        if (isBlank(layer) || "NONE".equals(layer)) return oldPath;
+        if (isBlank(oldPath)) return layer;
+        return oldPath + "->" + layer;
+    }
+
+    private void mergeNasDecodedContent(SignalingMessage originalMsg, SignalingMessage reparsedMsg) {
+        if (originalMsg == null || reparsedMsg == null) return;
+        if (originalMsg.getNasList() == null || originalMsg.getNasList().isEmpty()) return;
+        if (reparsedMsg.getNasList() == null || reparsedMsg.getNasList().isEmpty()) return;
+
+        NasInfo decodedNas = reparsedMsg.getNasList().get(0);
+        if (decodedNas == null) return;
+
+        for (NasInfo originalNas : originalMsg.getNasList()) {
+            if (originalNas == null) continue;
+            if (!originalNas.isEncrypted()) continue;
+
+            // 保留原始密文痕迹
+            if (isBlank(originalNas.getOriginalFullNasPduHex())) {
+                originalNas.setOriginalFullNasPduHex(originalNas.getFullNasPduHex());
+            }
+            if (isBlank(originalNas.getOriginalCipherTextHex())) {
+                originalNas.setOriginalCipherTextHex(originalNas.getCipherTextHex());
+            }
+
+            // 用当前已知明文填回去
+            if (!isBlank(originalMsg.getDecryptPlainHex())) {
+                originalNas.setDecryptedTexHex(originalMsg.getDecryptPlainHex());
+            }
+
+            // 用回流解析出的 NAS 语义字段替换原来的那条 NAS
+            copyNasSemanticFields(originalNas, decodedNas);
+
+            // 这条 NAS 现在已经是明文态
+            originalNas.setEncrypted(false);
+            originalNas.setCipherTextHex(null);
+
+            // fullNasPduHex 现在代表“当前最终 NAS 视图”
+            if (!isBlank(decodedNas.getFullNasPduHex())) {
+                originalNas.setFullNasPduHex(decodedNas.getFullNasPduHex());
+            }
+
+            return;
+        }
+    }
+
+    private void copyNasSemanticFields(NasInfo target, NasInfo source) {
+        if (target == null || source == null) return;
+
+        target.setNasNode(source.getNasNode());
+        target.setEpd(source.getEpd());
+        target.setSpareHalfOctet(source.getSpareHalfOctet());
+        target.setSecurityHeaderType(source.getSecurityHeaderType());
+        target.setMsgAuthCodeHex(source.getMsgAuthCodeHex());
+        target.setSeqNo(source.getSeqNo());
+
+        target.setMmMessageType(source.getMmMessageType());
+        target.setNas_cipheringAlgorithm(source.getNas_cipheringAlgorithm());
+        target.setNas_integrityProtAlgorithm(source.getNas_integrityProtAlgorithm());
+
+        target.setGuamiMcc(source.getGuamiMcc());
+        target.setGuamiMnc(source.getGuamiMnc());
+        target.setTmsi(source.getTmsi());
+        target.setRegType5gs(source.getRegType5gs());
+
+        if (source.getFieldPaths() != null && !source.getFieldPaths().isEmpty()) {
+            target.setFieldPaths(new LinkedHashMap<>(source.getFieldPaths()));
+        }
+    }
+
+    private void mergePdcpDecodedContent(SignalingMessage originalMsg, SignalingMessage reparsedMsg) {
+        if (originalMsg == null || reparsedMsg == null) return;
+
+        if (reparsedMsg.getRrcInfo() != null) {
+            originalMsg.setRrcInfo(reparsedMsg.getRrcInfo());
+        }
+
+        if (!isBlank(reparsedMsg.getMsgType())) {
+            originalMsg.setMsgType(reparsedMsg.getMsgType());
+        }
+
+        if (!isBlank(reparsedMsg.getProtocolLayer())) {
+            originalMsg.setProtocolLayer(reparsedMsg.getProtocolLayer());
+        }
+
+        // 如果回流后仍有 pdcpInfo，也可以更新
+        if (reparsedMsg.getPdcpInfo() != null) {
+            originalMsg.setPdcpInfo(reparsedMsg.getPdcpInfo());
+        }
     }
 
 }
