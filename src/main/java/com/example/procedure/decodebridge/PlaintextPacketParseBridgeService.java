@@ -1,4 +1,19 @@
 package com.example.procedure.decodebridge;
 
-public class PlaintextPacketParseBridgeService {
+import com.example.procedure.model.SignalingMessage;
+
+import java.util.Set;
+import java.util.function.Consumer;
+
+public interface PlaintextPacketParseBridgeService {
+
+    DebugDecodeArtifacts debugBuildAndParse(PlaintextDecodeRequest request,
+                                            Set<String> wanted,
+                                            Set<String> enabledRaw,
+                                            Consumer<SignalingMessage> messageConsumer) throws Exception;
+
+    void streamBuildAndParse(PlaintextDecodeRequest request,
+                             Set<String> wanted,
+                             Set<String> enabledRaw,
+                             Consumer<SignalingMessage> messageConsumer) throws Exception;
 }

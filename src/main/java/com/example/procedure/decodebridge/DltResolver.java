@@ -1,4 +1,6 @@
 package com.example.procedure.decodebridge;
 
-public class DltResolver {
+public interface DltResolver {
+
+    int resolve(PlaintextDecodeRequest request);
 }
