@@ -1,5 +1,6 @@
 package com.example.procedure.service;
 
+import com.example.procedure.decodebridge.DecryptResultReentryService;
 import com.example.procedure.decrypt.DecryptAttemptResult;
 import com.example.procedure.decrypt.DecryptClient;
 import com.example.procedure.decrypt.DecryptResponse;
@@ -35,13 +36,15 @@ public class MsgProcessing_Service {
     private final ProDispatcher_Service proDispatcherService;
 
     private final PendingMessageService pendingMessageService;
+    private final DecryptResultReentryService decryptResultReentryService;
 
     public MsgProcessing_Service(
             UEContextService ueContextService, ObjectMapper objectMapper,
             MessageCategoryClassifier messageCategoryClassifier,
             ProClassify_Service proClassifyService,
             ProDispatcher_Service proDispatcherService,
-            PendingMessageService pendingMessageService
+            PendingMessageService pendingMessageService,
+            DecryptResultReentryService decryptResultReentryService
     ){
         this.ueContextService = ueContextService;
         this.objectMapper = objectMapper;
@@ -49,6 +52,7 @@ public class MsgProcessing_Service {
         this.proClassifyService = proClassifyService;
         this.proDispatcherService = proDispatcherService;
         this.pendingMessageService = pendingMessageService;
+        this.decryptResultReentryService = decryptResultReentryService;
     }
 
     private boolean nasKeyReady(UEContext ctx) {
@@ -78,10 +82,12 @@ public class MsgProcessing_Service {
                 DecryptAttemptResult dr = tryDecryptByType(msg, encType, ctx);
                 if (dr.getStatus() == DecryptAttemptResult.Status.OK) {
                     // 标记解密完成，重新走一遍流程（第二次）
-                    msg.setDecrypted(true);
-                    // 暂不下放，留给后续二次处理统一入口
-//                    return new MessageProcessingResult(msg.getUeId(), msg.getMsgType(), category, null, null);
-
+                    try {
+                        reenterDecryptedMessage(msg);
+                    } catch (Exception e) {
+                        log.error("Decrypt reentry failed: ueId={}, msgId={}, encType={}, err={}",
+                                msg.getUeId(), msg.getMsgId(), encType, e.getMessage(), e);
+                    }
                 }
 
                 if (dr.getStatus() == DecryptAttemptResult.Status.WAITING) {
@@ -124,8 +130,13 @@ public class MsgProcessing_Service {
                 if (dr.getStatus() == DecryptAttemptResult.Status.OK) {
                     // 标记解密完成，重新走一遍流程（第二次）
                     msg.setDecrypted(true);
+                    try {
+                        reenterDecryptedMessage(msg);
+                    } catch (Exception e) {
+                        log.error("Decrypt reentry failed: ueId={}, msgId={}, encType={}, err={}",
+                                msg.getUeId(), msg.getMsgId(), encType, e.getMessage(), e);
+                    }
                     // 暂不下放，留给后续二次处理统一入口
-                    return new MessageProcessingResult(msg.getUeId(), msg.getMsgType(), category, null, null);
                 }
 
                 if (dr.getStatus() == DecryptAttemptResult.Status.WAITING) {
@@ -407,7 +418,12 @@ public class MsgProcessing_Service {
                 m.setDecrypted(true);
                 ok++;
 
-                // ⚠️ 这里按你要求：不做二次流程处理，只记录即可
+                try {
+                    reenterDecryptedMessage(m);
+                } catch (Exception e) {
+                    log.error("Decrypt reentry failed: ueId={}, msgId={}, encType={}, err={}",
+                            m.getUeId(), m.getMsgId(), encType, e.getMessage(), e);
+                }
                 log.info("Pending decrypt OK: ueId={}, msgId={}, encType={}", ueId, m.getMsgId(), encType);
                 SignalingMessagePrinter.printAndWriteToFile(
                         m, Paths.get("logs/signaling_dump_1.log"), true
@@ -437,6 +453,29 @@ public class MsgProcessing_Service {
 
         log.info("Pending decrypt retry done: ueId={}, batch={}, ok={}, requeue={}, fail={}, remain={}",
                 ueId, items.size(), ok, back, fail, pendingMessageService.size(ueId));
+    }
+
+    private void reenterDecryptedMessage(SignalingMessage msg) {
+        try {
+            decryptResultReentryService.reenter(msg, reparsedMsg -> {
+                reparsedMsg.setDecrypted(true);
+
+                // 这里按你的 SignalingMessage 实际字段调整
+                reparsedMsg.setEncrypted(false);
+                reparsedMsg.setEncryptedType("NONE");
+
+                MessageProcessingResult result = process(reparsedMsg);
+
+                SignalingMessagePrinter.printAndWriteToFile(
+                        reparsedMsg,
+                        Paths.get("logs/signaling_reentry_dump.log"),
+                        true
+                );
+            });
+        } catch (Exception e) {
+            log.error("Decrypt reentry failed: ueId={}, msgId={}, encType={}, err={}",
+                    msg.getUeId(), msg.getMsgId(), msg.getEncryptedType(), e.getMessage(), e);
+        }
     }
 
     private boolean isBlank(String s) {
