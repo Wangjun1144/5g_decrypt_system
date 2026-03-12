@@ -13,10 +13,11 @@ public final class ChainIndex {
 
     private final ArrayList<String> pathTable = new ArrayList<>(32);
     private final HashMap<String, Integer> pathToId = new HashMap<>(64);
+    private final HashMap<Integer, MsgNode> nodeById = new HashMap<>(16);
 
     public void startPacketRoot(String rootPath, int depth) {
         // 建 PACKET 虚拟根，并压栈
-        onEnter(MsgType.PACKET, depth, rootPath, -1);
+        onEnter(MsgType.PACKET, depth, rootPath, -1, -1);
     }
 
     public void endPacketRoot() {
@@ -24,23 +25,25 @@ public final class ChainIndex {
         onExit();
     }
 
-    public int onEnter(MsgType type, int depth, String path, int payloadIndex) {
+    public int onEnter(MsgType type, int depth, String path, int payloadIndex, int payloadSequence) {
         typeMask |= (1L << type.ordinal());
         MsgNode n = new MsgNode();
-        n.id = nodes.size();
+        n.id = payloadSequence >= 0 ? payloadSequence : nodes.size();
+        n.payloadIndex = payloadIndex;
+        n.payloadSequence = payloadSequence;
         n.type = type;
         n.depth = depth;
         n.enter = ++time;
         n.exit = -1;
         n.parentId = stack.isEmpty() ? -1 : stack.peekLast();
-        n.payloadIndex = payloadIndex;
         n.pathId = internPath(path);
+        nodeById.put(n.id, n);
 
         nodes.add(n);
         byType.computeIfAbsent(type, k -> new ArrayList<>(2)).add(n.id);
 
         if (n.parentId != -1) {
-            nodes.get(n.parentId).children.add(n.id);
+            nodeById.get(n.parentId).children.add(n.id);
         }
 
         stack.addLast(n.id);
@@ -60,13 +63,13 @@ public final class ChainIndex {
         return byType.getOrDefault(type, new ArrayList<>());
     }
 
-    public MsgNode node(int id) { return nodes.get(id); }
+    public MsgNode node(int id) { return nodeById.get(id); }
 
     public String pathOf(int pathId) { return pathTable.get(pathId); }
 
     public boolean contains(int aId, int bId) {
-        MsgNode a = nodes.get(aId);
-        MsgNode b = nodes.get(bId);
+        MsgNode a = nodeById.get(aId);
+        MsgNode b = nodeById.get(bId);
         return a.enter <= b.enter && b.exit <= a.exit;
     }
 
@@ -74,7 +77,7 @@ public final class ChainIndex {
         // 在 PACKET 虚拟根模式下，roots 就是 PACKET 的 children
         List<Integer> pack = nodesByType(MsgType.PACKET);
         if (pack.isEmpty()) return List.of();
-        MsgNode root = nodes.get(pack.get(0));
+        MsgNode root = nodeById.get(pack.get(0));
         return root.children;
     }
 
@@ -112,7 +115,7 @@ public final class ChainIndex {
         if (ids == null || ids.isEmpty()) return List.of();
 
         ArrayList<MsgNode> out = new ArrayList<>(ids.size());
-        for (int id : ids) out.add(nodes.get(id));
+        for (int id : ids) out.add(nodeById.get(id));
         return out;
     }
 

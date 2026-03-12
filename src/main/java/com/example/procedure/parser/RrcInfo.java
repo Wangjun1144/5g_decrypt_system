@@ -16,6 +16,8 @@ public class RrcInfo {
     /** 在当前帧中的解析顺序号（从 1 开始自增） */
     private int sequence;
 
+    private String nodeId;
+
     private String direction;   // UL / DL
     private String msgName;     // rrcSetupRequest / rrcSetup / rrcSetupComplete ...
 

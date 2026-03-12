@@ -17,6 +17,8 @@ public class MacInfo {
     /** 在当前帧中的解析顺序号（从 1 开始自增） */
     private int sequence;
 
+    private String nodeId;
+
     /** C-RNTI 或其它类型的 RNTI，对应 mac-nr.rnti */
     private String rnti;
 

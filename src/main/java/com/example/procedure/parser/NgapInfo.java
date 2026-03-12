@@ -17,6 +17,8 @@ public class NgapInfo {
     /** 在当前帧中的解析顺序号（从 1 开始自增） */
     private int sequence;
 
+    private String nodeId;
+
 
     /** initiatingMessage / successfulOutcome / unsuccessfulOutcome */
     private String pduType;

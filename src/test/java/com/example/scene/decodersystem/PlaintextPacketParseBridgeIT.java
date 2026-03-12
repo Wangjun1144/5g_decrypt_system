@@ -76,9 +76,7 @@ class PlaintextPacketParseBridgeIT {
     @Test
     void debug_build_parse_rrc_plaintext() throws Exception {
         String plainHex =
-                "3a2fbf0121479913017ed421dbe7dc73430076d9da448b7d3f6931f4d55767c51" +
-                        "ca845bef2ae228ac002e188cd69aee2521067a5ac225743b038cc92bd1f00b47" +
-                        "c2ce60e64e2c87e39ef42c2a237c9ec508e3b85ea139f309fc691bf61c2836ad780";
+                "7e02dd7ff69601f6a48b02bb779faedb5b9d0e7d233c33e4aa3461c57458f573ee672bf8f36cb878ed321450e8f0";
 
         Set<String> wanted = Set.of(
                 "nas-5gs_raw", "nas-5gs", "nr-rrc",

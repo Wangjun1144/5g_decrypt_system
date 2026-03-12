@@ -13,6 +13,12 @@ import java.util.regex.Pattern;
 
 public final class PacketParseContext {
 
+    private int infoSequenceCounter = 0;
+
+    public int nextSequence() {
+        return infoSequenceCounter++;
+    }
+
     public final RrcNasParseResult result;
     public final long packetIndex;
 
@@ -85,24 +91,28 @@ public final class PacketParseContext {
     // ---------------------------
     public MacInfo newMac() {
         MacInfo m = new MacInfo();
+        m.setSequence(nextSequence());
         result.getMacList().add(m);
         return m;
     }
 
     public PdcpInfo newPdcp() {
         PdcpInfo p = new PdcpInfo();
+        p.setSequence(nextSequence());
         result.getPdcpList().add(p);
         return p;
     }
 
     public RrcInfo newRrc() {
         RrcInfo r = new RrcInfo();
+        r.setSequence(nextSequence());
         result.getRrcList().add(r);
         return r;
     }
 
     public NasInfo pushNewNas() {
         NasInfo n = new NasInfo();
+        n.setSequence(nextSequence());
         result.getNasList().add(n);
         nasStack.push(n);
         nasStateStack.push(new NasState(n));
@@ -116,18 +126,21 @@ public final class PacketParseContext {
 
     public NgapInfo newNgap() {
         NgapInfo g = new NgapInfo();
+        g.setSequence(nextSequence());
         result.getNgapList().add(g);
         return g;
     }
 
     public NUARInfo ensureNuarInfo() {
         if (result.getNuarInfo() == null) {
-            result.setNuarInfo(new NUARInfo());
+            NUARInfo n = new NUARInfo();
+            n.setSequence(nextSequence());
+            result.setNuarInfo(n);
             markIface("N12");
 
             // ✅ 第一次出现 NUAR 就建节点
             if (index != null) {
-                index.onEnter(MsgType.NUAR, depth, pathString(), 0);
+                index.onEnter(MsgType.NUAR, depth, pathString(), 0, n.getSequence());
                 index.onExit(); // NUAR 没有子树容器概念，立刻关掉也行
             }
         }

@@ -16,4 +16,6 @@ public final class MsgNode {
 
     public int payloadIndex;    // 对应 result 中 list 的下标；PACKET 用 -1
     public int pathId;          // 可选：路径表 id
+
+    public int payloadSequence;     // payload 创建时的统一序号；PACKET 用 -1
 }

@@ -1,6 +1,7 @@
 package com.example.procedure.streaming.layers;
 
 import com.example.procedure.model.SignalingMessage;
+import com.example.procedure.streaming.parser.MessageTreeBuilder;
 import com.example.procedure.streaming.parser.RrcNasParseResult;
 import com.example.procedure.parser.MacInfo;
 import com.example.procedure.parser.NgapInfo;
@@ -27,17 +28,19 @@ public final class ChainsInspectConsumer implements Consumer<List<RrcNasParseRes
         if (chains == null || chains.isEmpty()) return;
 
         for (RrcNasParseResult chain : chains) {
-            SignalingMessage msg = buildMessage(chain);
+            long id = SEQ.incrementAndGet();
+            String msgId = "MSG-" + id;
+            SignalingMessage msg = buildMessage(chain, msgId);
             if (msg != null) {
-                long id = SEQ.incrementAndGet();
-                msg.setMsgId("MSG-" + id);
+                msg.setMsgId(msgId);
+                msg.setMessageTree(MessageTreeBuilder.fromChainIndex(msg.getMsgId(), chain.getIndex()));
                 onMessage.accept(msg);
                 // 你想 dump 或者传上层就行
             }
         }
     }
 
-    private SignalingMessage buildMessage(RrcNasParseResult chain) {
+    private SignalingMessage buildMessage(RrcNasParseResult chain, String msgId) {
         if (chain == null) return null;
 
         SignalingMessage msg = new SignalingMessage();
@@ -70,8 +73,47 @@ public final class ChainsInspectConsumer implements Consumer<List<RrcNasParseRes
         msg.setNgapInfoList(chain.getNgapList() == null ? List.of() : chain.getNgapList());
         msg.setNuarInfo(chain.getNuarInfo());
         msg.setNasList(chain.getNasList() == null ? List.of() : chain.getNasList());
+        fillPayloadNodeIds(msg, msgId);
+
 
         return msg;
+    }
+
+    private void fillPayloadNodeIds(SignalingMessage msg, String msgId) {
+        if (msg == null || msgId == null) return;
+
+        if (msg.getMacInfo() != null) {
+            msg.getMacInfo().setNodeId(buildNodeId(msgId, msg.getMacInfo().getSequence()));
+        }
+        if (msg.getPdcpInfo() != null) {
+            msg.getPdcpInfo().setNodeId(buildNodeId(msgId, msg.getPdcpInfo().getSequence()));
+        }
+        if (msg.getRrcInfo() != null) {
+            msg.getRrcInfo().setNodeId(buildNodeId(msgId, msg.getRrcInfo().getSequence()));
+        }
+        if (msg.getNuarInfo() != null) {
+            msg.getNuarInfo().setNodeId(buildNodeId(msgId, msg.getNuarInfo().getSequence()));
+        }
+
+        if (msg.getNasList() != null) {
+            for (NasInfo nas : msg.getNasList()) {
+                if (nas != null) {
+                    nas.setNodeId(buildNodeId(msgId, nas.getSequence()));
+                }
+            }
+        }
+
+        if (msg.getNgapInfoList() != null) {
+            for (NgapInfo ngap : msg.getNgapInfoList()) {
+                if (ngap != null) {
+                    ngap.setNodeId(buildNodeId(msgId, ngap.getSequence()));
+                }
+            }
+        }
+    }
+
+    private static String buildNodeId(String messageId, int sequence) {
+        return messageId + ":N" + sequence;
     }
 
     private static <T> T first(List<T> list) {

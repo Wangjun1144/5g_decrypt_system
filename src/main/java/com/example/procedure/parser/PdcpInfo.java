@@ -17,6 +17,8 @@ public class PdcpInfo {
     /** 在当前帧中的解析顺序号（从 1 开始自增） */
     private int sequence;
 
+    private String nodeId;
+
     boolean pdcpencrypted;
     /**
      * PDCP 信令数据，去掉冒号后的纯十六进制串：

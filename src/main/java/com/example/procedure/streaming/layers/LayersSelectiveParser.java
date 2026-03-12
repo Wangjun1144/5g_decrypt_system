@@ -26,7 +26,7 @@ public final class LayersSelectiveParser {
     /**
      * 输出：一个 packet 可能对应多条链（每个 wanted 且非 _raw 的 layer 一条链）
      *
-     * @param enabledRawLayers 只抓取你启用的 raw layer（例如 Set.of("nas-5gs_raw")）。
+     * @param enabledRawLayers 只抓取启用的 raw layer（例如 Set.of("nas-5gs_raw")）。
      *                        未启用的 *_raw 会被当作普通字段跳过，不参与严格配对。
      */
     public static void parsePackets(InputStream in,
@@ -459,45 +459,46 @@ public final class LayersSelectiveParser {
         if ("mac-nr".equals(fieldName)) {
             ctx.macDepth++;
             ctx.markIface("Uu");
-            ctx.newMac();
-            // ✅ payloadIndex：刚 newMac() 之后，macList 最后一个
+            MacInfo mac = ctx.newMac();
             int payloadIndex = ctx.result.getMacList().size() - 1;
-            ctx.index.onEnter(MsgType.MAC, ctx.depth, ctx.pathString(), payloadIndex);
+            int payloadSequence = mac.getSequence();
+            ctx.index.onEnter(MsgType.MAC, ctx.depth, ctx.pathString(), payloadIndex, payloadSequence);
 
             return new EnterMark(Kind.MAC, ctx.depth);
         }
 
         if ("pdcp-nr".equals(fieldName)) {
             ctx.pdcpDepth++;
-            ctx.newPdcp();
+            PdcpInfo pdcp = ctx.newPdcp();
             int payloadIndex = ctx.result.getPdcpList().size() - 1;
-            ctx.index.onEnter(MsgType.PDCP, ctx.depth, ctx.pathString(), payloadIndex);
+            int payloadSequence = pdcp.getSequence();
+            ctx.index.onEnter(MsgType.PDCP, ctx.depth, ctx.pathString(), payloadIndex, payloadSequence);
 
             return new EnterMark(Kind.PDCP, ctx.depth);
         }
 
         if ("nr-rrc".equals(fieldName)) {
             ctx.rrcDepth++;
-            ctx.newRrc();
+            RrcInfo rrc = ctx.newRrc();
             int payloadIndex = ctx.result.getRrcList().size() - 1;
-            ctx.index.onEnter(MsgType.RRC, ctx.depth, ctx.pathString(), payloadIndex);
+            int payloadSequence = rrc.getSequence();
+            ctx.index.onEnter(MsgType.RRC, ctx.depth, ctx.pathString(), payloadIndex, payloadSequence);
 
             return new EnterMark(Kind.RRC, ctx.depth);
         }
 
         if ("nas-5gs".equals(fieldName)) {
-            ctx.pushNewNas();
-
+            NasInfo nas = ctx.pushNewNas();
             int payloadIndex = ctx.result.getNasList().size() - 1;
-            ctx.index.onEnter(MsgType.NAS, ctx.depth, ctx.pathString(), payloadIndex);
-
+            int payloadSequence = nas.getSequence();
+            ctx.index.onEnter(MsgType.NAS, ctx.depth, ctx.pathString(), payloadIndex, payloadSequence);
 
             // raw 先到：进入 nas-5gs 时补 fullNasPduHex
             String raw = ctx.getRawHex("nas-5gs");
             if (raw != null) {
-                NasInfo nas = ctx.currentNas();
-                if (nas != null && (nas.getFullNasPduHex() == null || nas.getFullNasPduHex().isEmpty())) {
-                    nas.setFullNasPduHex(raw);
+                NasInfo nas1 = ctx.currentNas();
+                if (nas1 != null && (nas1.getFullNasPduHex() == null || nas1.getFullNasPduHex().isEmpty())) {
+                    nas1.setFullNasPduHex(raw);
                 }
             }
             return new EnterMark(Kind.NAS, ctx.depth);
@@ -523,11 +524,11 @@ public final class LayersSelectiveParser {
 
         if ("ngap".equals(fieldName)) {
             ctx.ngapDepth++;
-            ctx.newNgap();
+            NgapInfo ngap = ctx.newNgap();
             ctx.markIface("N2");
-
             int payloadIndex = ctx.result.getNgapList().size() - 1;
-            ctx.index.onEnter(MsgType.NGAP, ctx.depth, ctx.pathString(), payloadIndex);
+            int payloadSequence = ngap.getSequence();
+            ctx.index.onEnter(MsgType.NGAP, ctx.depth, ctx.pathString(), payloadIndex, payloadSequence);
             return new EnterMark(Kind.NGAP, ctx.depth);
         }
 

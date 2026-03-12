@@ -1,5 +1,6 @@
 package com.example.procedure.model;
 
+import com.example.procedure.model.tree.MessageTree;
 import com.example.procedure.parser.*;
 import lombok.Data;
 
@@ -73,5 +74,7 @@ public class SignalingMessage {
 
     /** 如果本轮解的是 NAS，记录目标在 nasList 中的下标 */
     private Integer decryptTargetNasIndex;
+
+    private MessageTree messageTree;
 
 }
