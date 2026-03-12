@@ -18,6 +18,9 @@ public class RrcInfo {
 
     private String nodeId;
 
+    /** 新增：回流根/派生节点来自哪个原始节点 */
+    private String sourceNodeId;
+
     private String direction;   // UL / DL
     private String msgName;     // rrcSetupRequest / rrcSetup / rrcSetupComplete ...
 

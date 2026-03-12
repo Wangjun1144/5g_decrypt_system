@@ -21,6 +21,13 @@ public class NasInfo {
 
     private String nodeId;
 
+    /**
+     * 新增：
+     * 回流解析出来的 NAS 根节点来自哪个原始加密节点。
+     * 只在“解密回流结果”里使用，用来把回流内容 merge 回原节点。
+     */
+    private String sourceNodeId;
+
     private JsonNode nasNode;        // 原始逻辑节点（你原来就有）
     /** 完整 nas-5gs_raw 的十六进制（去掉冒号） */
     private String fullNasPduHex;

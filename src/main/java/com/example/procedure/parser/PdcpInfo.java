@@ -19,6 +19,9 @@ public class PdcpInfo {
 
     private String nodeId;
 
+    /** 新增：回流根/派生节点来自哪个原始节点 */
+    private String sourceNodeId;
+
     boolean pdcpencrypted;
     /**
      * PDCP 信令数据，去掉冒号后的纯十六进制串：

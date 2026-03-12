@@ -76,7 +76,7 @@ class PlaintextPacketParseBridgeIT {
     @Test
     void debug_build_parse_rrc_plaintext() throws Exception {
         String plainHex =
-                "7e02dd7ff69601f6a48b02bb779faedb5b9d0e7d233c33e4aa3461c57458f573ee672bf8f36cb878ed321450e8f0";
+                "7e00670100492e0112c1ffff932801007b003c8080211001000010810600000000830600000000000d00000300000100000c00001200000200000a0000050000100000110000170101002300002400120181250403696d73";
 
         Set<String> wanted = Set.of(
                 "nas-5gs_raw", "nas-5gs", "nr-rrc",
@@ -86,9 +86,9 @@ class PlaintextPacketParseBridgeIT {
 
         PlaintextDecodeRequest req = new PlaintextDecodeRequest();
         req.setPlainHex(plainHex);
-        req.setProtocolHint("NR_RRC_UL_DCCH");
-        req.setTraceId("trace_debug_plaintext");
-        req.setSourceMsgId("msg_debug_plaintext");
+        req.setProtocolHint("NAS_5GS");
+        req.setTraceId("trace_debug_17NAS");
+        req.setSourceMsgId("msg_debug_17RRC");
         req.setUeId("UE_TEST_DEBUG");
         req.setKeepHexdumpFile(true);
 

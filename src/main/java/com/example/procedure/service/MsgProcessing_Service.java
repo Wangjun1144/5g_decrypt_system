@@ -303,9 +303,10 @@ public class MsgProcessing_Service {
                 msg.setDecryptPlainHex(resp.getPlainData());
                 msg.setDecryptMacHex(normalizeHex(resp.getPlainMac()));
 
-                // 关键：记录这次解的是哪条 NAS
+                // 记录本轮解密目标
                 msg.setDecryptTargetLayer("NAS");
-                msg.setDecryptTargetNasIndex(i);
+                msg.setDecryptTargetNasIndex(i); // 兼容旧逻辑
+                msg.setDecryptTargetNodeId(nas.getNodeId());
 
                 return DecryptAttemptResult.ok();
             }
@@ -375,6 +376,12 @@ public class MsgProcessing_Service {
             // ✅ 解密成功：写回 message
             msg.setDecryptPlainHex(resp.getPlainData());
             msg.setDecryptMacHex(normalizeHex(resp.getPlainMac())); // 建议归一化（去0x/冒号/空格）
+
+            // 新增：AS 解密的真实目标是当前 PDCP 节点
+            msg.setDecryptTargetLayer("PDCP");
+            if (msg.getPdcpInfo() != null) {
+                msg.setDecryptTargetNodeId(msg.getPdcpInfo().getNodeId());
+            }
             return DecryptAttemptResult.ok();
 
             // 如果你还想把明文写回对应 NAS 层（多层情况下更推荐）
@@ -483,17 +490,19 @@ public class MsgProcessing_Service {
         try {
             decryptResultReentryService.reenter(msg, reparsedMsg -> {
 
+                // 先把来源锚点挂到回流消息
+                attachReparsedSourceNodeId(msg, reparsedMsg);
+
                 if ("NAS".equals(decryptedLayer)) {
                     mergeNasDecodedContent(msg, reparsedMsg);
-                } else if ("PDCP".equals(decryptedLayer)){
+                } else if ("PDCP".equals(decryptedLayer)) {
                     mergePdcpDecodedContent(msg, reparsedMsg);
                 } else if ("NAS+PDCP".equals(decryptedLayer)) {
-                    // 正常不会一次同时解两层，但兜底可以两边都试
+                    // 兜底：两边都试
                     mergeNasDecodedContent(msg, reparsedMsg);
                     mergePdcpDecodedContent(msg, reparsedMsg);
                 }
 
-                // 当前剩余加密状态由回流结果决定
                 msg.setEncrypted(
                         reparsedMsg.getEncrypted() != null ? reparsedMsg.getEncrypted() : false
                 );
@@ -503,9 +512,8 @@ public class MsgProcessing_Service {
                                 : "NONE"
                 );
 
-                // 保留最近一轮解密结果
                 if (!isBlank(msg.getDecryptPlainHex())) {
-                    // 原值保留即可
+                    // 原值保留
                 } else if (!isBlank(reparsedMsg.getDecryptPlainHex())) {
                     msg.setDecryptPlainHex(reparsedMsg.getDecryptPlainHex());
                 }
@@ -513,18 +521,18 @@ public class MsgProcessing_Service {
                 if (isBlank(msg.getDecryptMacHex()) && !isBlank(reparsedMsg.getDecryptMacHex())) {
                     msg.setDecryptMacHex(reparsedMsg.getDecryptMacHex());
                 }
-                // 2) 记录：这条原始消息已经成功解开了一层
+
                 msg.setDecrypted(true);
                 msg.setDecryptDepth(safeDecryptDepth(msg) + 1);
                 msg.setDecryptPath(
                         appendDecryptPath(msg.getDecryptPath(), normalizeEncType(decryptedLayer))
                 );
 
-                // 清理本轮目标标记
-                msg.setDecryptTargetLayer(null);
-                msg.setDecryptTargetNasIndex(null);
+                // 清理本轮解密目标标记
+//                msg.setDecryptTargetLayer(null);
+//                msg.setDecryptTargetNasIndex(null);
+//                msg.setDecryptTargetNodeId(null);
 
-                // 3) 保留回流后识别出的真实加密状态
                 if (msg.getEncrypted() == null) {
                     msg.setEncrypted(false);
                 }
@@ -541,6 +549,28 @@ public class MsgProcessing_Service {
         } catch (Exception e) {
             log.error("Decrypt reentry failed: ueId={}, msgId={}, encType={}, err={}",
                     msg.getUeId(), msg.getMsgId(), msg.getEncryptedType(), e.getMessage(), e);
+        }
+    }
+
+    private void attachReparsedSourceNodeId(SignalingMessage originalMsg, SignalingMessage reparsedMsg) {
+        if (originalMsg == null || reparsedMsg == null) return;
+        if (isBlank(originalMsg.getDecryptTargetNodeId())) return;
+
+        reparsedMsg.setReentrySourceNodeId(originalMsg.getDecryptTargetNodeId());
+
+        if (reparsedMsg.getNasList() != null && !reparsedMsg.getNasList().isEmpty()) {
+            NasInfo nas = reparsedMsg.getNasList().get(0);
+            if (nas != null && isBlank(nas.getSourceNodeId())) {
+                nas.setSourceNodeId(originalMsg.getDecryptTargetNodeId());
+            }
+        }
+
+        if (reparsedMsg.getRrcInfo() != null && isBlank(reparsedMsg.getRrcInfo().getSourceNodeId())) {
+            reparsedMsg.getRrcInfo().setSourceNodeId(originalMsg.getDecryptTargetNodeId());
+        }
+
+        if (reparsedMsg.getPdcpInfo() != null && isBlank(reparsedMsg.getPdcpInfo().getSourceNodeId())) {
+            reparsedMsg.getPdcpInfo().setSourceNodeId(originalMsg.getDecryptTargetNodeId());
         }
     }
 
@@ -599,52 +629,53 @@ public class MsgProcessing_Service {
         if (originalMsg.getNasList() == null || originalMsg.getNasList().isEmpty()) return;
         if (reparsedMsg.getNasList() == null || reparsedMsg.getNasList().isEmpty()) return;
 
-        Integer targetIdx = originalMsg.getDecryptTargetNasIndex();
-        if (targetIdx == null || targetIdx < 0 || targetIdx >= originalMsg.getNasList().size()) {
-            return;
-        }
-
-        NasInfo outerNas = originalMsg.getNasList().get(targetIdx);
-        if (outerNas == null) return;
-
-        // 1) 保留原始密文痕迹
-        if (isBlank(outerNas.getOriginalFullNasPduHex())) {
-            outerNas.setOriginalFullNasPduHex(outerNas.getFullNasPduHex());
-        }
-        if (isBlank(outerNas.getOriginalCipherTextHex())) {
-            outerNas.setOriginalCipherTextHex(outerNas.getCipherTextHex());
-        }
-
-        // 2) 当前这一轮解出来的明文，回填到“外层壳”的 decryptedTexHex
-        if (!isBlank(originalMsg.getDecryptPlainHex())) {
-            outerNas.setDecryptedTexHex(originalMsg.getDecryptPlainHex());
-        }
-
-        // 3) 外层 NAS 不再标记为“待解密”，但外壳保留
-        outerNas.setEncrypted(false);
-        outerNas.setCipherTextHex(null);
-
-        // 注意：
-        // 不要把 decodedNas 的语义字段覆盖 outerNas
-        // outerNas 代表安全保护外壳，不是里面真正的 plain NAS
-
-        // 4) 把回流出来的内层 NAS 列表插入到外壳后面
-        List<NasInfo> decodedNasList = reparsedMsg.getNasList();
-        if (decodedNasList == null || decodedNasList.isEmpty()) {
-            return;
-        }
-
-        int insertPos = targetIdx + 1;
-        for (NasInfo decodedNas : decodedNasList) {
-            NasInfo cloned = cloneNasInfo(decodedNas);
-            if (cloned != null) {
-                originalMsg.getNasList().add(insertPos, cloned);
-                insertPos++;
+        String sourceNodeId = reparsedMsg.getReentrySourceNodeId();
+        if (isBlank(sourceNodeId) && !reparsedMsg.getNasList().isEmpty()) {
+            NasInfo rootNas = reparsedMsg.getNasList().get(0);
+            if (rootNas != null) {
+                sourceNodeId = rootNas.getSourceNodeId();
             }
         }
+        if (isBlank(sourceNodeId)) {
+            sourceNodeId = originalMsg.getDecryptTargetNodeId();
+        }
+        if (isBlank(sourceNodeId)) {
+            return;
+        }
 
-        // 5) 重排 sequence，避免 sequence 混乱
-        resequenceNasList(originalMsg.getNasList());
+        NasInfo targetNas = ReentryNodeMergeSupport.findNasByNodeId(originalMsg, sourceNodeId);
+        if (targetNas == null) {
+            log.warn("mergeNasDecodedContent skip: target NAS not found, msgId={}, sourceNodeId={}",
+                    originalMsg.getMsgId(), sourceNodeId);
+            return;
+        }
+
+        NasInfo reparsedRootNas = reparsedMsg.getNasList().get(0);
+        if (reparsedRootNas == null) {
+            return;
+        }
+
+        // 1) 直接合并到原始 NAS 节点，不新建并列 NAS
+        ReentryNodeMergeSupport.mergeNasPayloadFields(
+                targetNas,
+                reparsedRootNas,
+                originalMsg.getDecryptPlainHex()
+        );
+
+        // 2) NAS -> NAS，同类型根节点，不 graft 根本身，只 graft 它的 children
+        ReentryNodeMergeSupport.graftReparsedTreeIntoOriginal(
+                originalMsg,
+                reparsedMsg,
+                sourceNodeId,
+                true
+        );
+
+        if (!isBlank(reparsedMsg.getMsgType())) {
+            originalMsg.setMsgType(reparsedMsg.getMsgType());
+        }
+        if (!isBlank(reparsedMsg.getProtocolLayer())) {
+            originalMsg.setProtocolLayer(reparsedMsg.getProtocolLayer());
+        }
     }
 
     private NasInfo cloneNasInfo(NasInfo source) {
@@ -652,6 +683,8 @@ public class MsgProcessing_Service {
 
         NasInfo n = new NasInfo();
         n.setSequence(source.getSequence());
+        n.setNodeId(source.getNodeId());
+        n.setSourceNodeId(source.getSourceNodeId());
         n.setNasNode(source.getNasNode());
         n.setFullNasPduHex(source.getFullNasPduHex());
         n.setCipherTextHex(source.getCipherTextHex());
@@ -696,26 +729,95 @@ public class MsgProcessing_Service {
 
     private void mergePdcpDecodedContent(SignalingMessage originalMsg, SignalingMessage reparsedMsg) {
         if (originalMsg == null || reparsedMsg == null) return;
+        if (originalMsg.getPdcpInfo() == null) return;
 
+        String sourceNodeId = reparsedMsg.getReentrySourceNodeId();
+        if (isBlank(sourceNodeId)) {
+            sourceNodeId = originalMsg.getDecryptTargetNodeId();
+        }
+        if (isBlank(sourceNodeId)) {
+            return;
+        }
+
+        PdcpInfo targetPdcp = ReentryNodeMergeSupport.findPdcpByNodeId(originalMsg, sourceNodeId);
+        if (targetPdcp == null) {
+            log.warn("mergePdcpDecodedContent skip: target PDCP not found, msgId={}, sourceNodeId={}",
+                    originalMsg.getMsgId(), sourceNodeId);
+            return;
+        }
+
+        // 1) 原 PDCP 节点保留，记录密文痕迹和明文
+        ReentryNodeMergeSupport.mergePdcpDecryptTrace(
+                targetPdcp,
+                originalMsg.getDecryptPlainHex(),
+                originalMsg.getDecryptMacHex()
+        );
+
+        // 2) PDCP 解密后一般回流出的是 RRC 根，不是 PDCP 根
+        //    所以要把“回流根整棵树” graft 到原 PDCP 节点下面
+        ReentryNodeMergeSupport.graftReparsedTreeIntoOriginal(
+                originalMsg,
+                reparsedMsg,
+                sourceNodeId,
+                false
+        );
+
+        // 3) 回流若包含 RRC，挂到原消息的 rrcInfo 上（语义可见）
         if (reparsedMsg.getRrcInfo() != null) {
-            originalMsg.setRrcInfo(reparsedMsg.getRrcInfo());
+            if (originalMsg.getRrcInfo() == null) {
+                originalMsg.setRrcInfo(reparsedMsg.getRrcInfo());
+            } else {
+                ReentryNodeMergeSupport.mergeRrcPayloadFields(
+                        originalMsg.getRrcInfo(),
+                        reparsedMsg.getRrcInfo()
+                );
+            }
+        }
+
+        // 4) PDCP 解密回流后，若产生 NAS，也保留到消息上用于后续 NAS 解密/流程判定
+        //    这里不 append 成并列链；只保留解析得到的语义层对象列表
+        if (reparsedMsg.getNasList() != null && !reparsedMsg.getNasList().isEmpty()) {
+            if (originalMsg.getNasList() == null || originalMsg.getNasList().isEmpty()) {
+                originalMsg.setNasList(reparsedMsg.getNasList());
+            } else {
+                // 只把原消息里还不存在的 nodeId 加进去，避免重复
+                mergeNasSemanticViewByNodeId(originalMsg, reparsedMsg.getNasList());
+            }
         }
 
         if (!isBlank(reparsedMsg.getMsgType())) {
             originalMsg.setMsgType(reparsedMsg.getMsgType());
         }
-
         if (!isBlank(reparsedMsg.getProtocolLayer())) {
             originalMsg.setProtocolLayer(reparsedMsg.getProtocolLayer());
         }
+    }
 
-        if (reparsedMsg.getPdcpInfo() != null) {
-            originalMsg.setPdcpInfo(reparsedMsg.getPdcpInfo());
+    private void mergeNasSemanticViewByNodeId(SignalingMessage originalMsg, List<NasInfo> incomingNasList) {
+        if (originalMsg == null || incomingNasList == null || incomingNasList.isEmpty()) {
+            return;
         }
 
-        // 关键补丁：PDCP 解密回流后如果解析出了 NAS，必须带回原消息
-        if (reparsedMsg.getNasList() != null && !reparsedMsg.getNasList().isEmpty()) {
-            appendNasList(originalMsg, reparsedMsg.getNasList());
+        if (originalMsg.getNasList() == null) {
+            originalMsg.setNasList(new java.util.ArrayList<>());
+        }
+
+        java.util.Set<String> existingNodeIds = new java.util.LinkedHashSet<>();
+        for (NasInfo n : originalMsg.getNasList()) {
+            if (n != null && !isBlank(n.getNodeId())) {
+                existingNodeIds.add(n.getNodeId());
+            }
+        }
+
+        for (NasInfo incoming : incomingNasList) {
+            if (incoming == null) continue;
+            if (!isBlank(incoming.getNodeId()) && existingNodeIds.contains(incoming.getNodeId())) {
+                continue;
+            }
+            originalMsg.getNasList().add(incoming);
+            if (!isBlank(incoming.getNodeId())) {
+                existingNodeIds.add(incoming.getNodeId());
+            }
         }
     }
 

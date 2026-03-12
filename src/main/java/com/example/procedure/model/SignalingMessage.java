@@ -6,75 +6,48 @@ import lombok.Data;
 
 import java.util.List;
 
-/**
- * 单条信令记录（可以看作 process_record 的 Java 版本输入）
- */
 @Data
 public class SignalingMessage {
 
     private String msgId;
-    /** UE 统一标识（你已经在前面做完 SUPI/C-RNTI 关联后得到的 ueId） */
     private String ueId;
-
-    /** 接口：Uu / N2 / Xn / F1 / E1 等 */
     private String iface;
-
-    /** 上下行：UL / DL */
     private String direction;
-
-    /** 协议层：RRC / NAS / NGAP ... */
     private String protocolLayer;
-
-    /** 统一后的消息类型（建议你自己枚举/映射，比如 RRC_SETUP_REQUEST 等） */
     private String msgType;
-
-    /** 时间戳，用于排序和超时判断 */
     private long timestamp;
-
-    /** 可选：帧号 / 序号，方便调试 */
     private long frameNo;
 
     private MessagePayload payload;
 
-    /** 本帧的 MAC / PDCP / RRC / NGAP / NAUSF 信息（如果有的话） */
     private MacInfo macInfo;
     private PdcpInfo pdcpInfo;
     private RrcInfo rrcInfo;
     private List<NgapInfo> ngapInfoList;
     private NUARInfo nuarInfo;
-
-    /** 本条信令中承载的所有 nas-5gs（可能为 0 个或多个） */
     private List<NasInfo> nasList;
 
-
-    /** 是否加密（NAS 或 PDCP 任意一层加密都算） */
     private Boolean encrypted;
-
-    /** 加密类型/来源：NONE / NAS / PDCP / NAS+PDCP */
     private String encryptedType;
 
-
-    /** 解密成功后的明文（例如 hex 或 json 字符串，按你服务返回格式存） */
     private String decryptPlainHex;
-
-    /** 解密相关的 MAC（可存服务返回的 mac 或者本次校验使用的 mac） */
     private String decryptMacHex;
-
-    /** 是否至少成功解密过一层。注意：不等于“内部已经完全无加密层”。 */
     private boolean decrypted;
-
-    /** 当前消息已经经历过多少层解密回流。0 表示原始消息。 */
     private Integer decryptDepth;
-
-    /** 记录已经成功解开的层级路径，例如 PDCP->NAS。 */
     private String decryptPath;
 
-    /** 本轮解密的目标层：NAS / PDCP */
     private String decryptTargetLayer;
+    private Integer decryptTargetNasIndex; // 兼容旧逻辑，可逐步废弃
 
-    /** 如果本轮解的是 NAS，记录目标在 nasList 中的下标 */
-    private Integer decryptTargetNasIndex;
+    /** 新增：本轮解密真正针对的原始节点 ID */
+    private String decryptTargetNodeId;
+
+    /**
+     * 新增：
+     * 回流消息来自哪个原始节点。
+     * 它不是长期业务字段，主要用于 merge/graft。
+     */
+    private String reentrySourceNodeId;
 
     private MessageTree messageTree;
-
 }

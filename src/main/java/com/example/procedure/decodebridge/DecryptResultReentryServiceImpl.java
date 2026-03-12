@@ -1,12 +1,12 @@
 package com.example.procedure.decodebridge;
 
 import com.example.procedure.model.SignalingMessage;
+import com.example.procedure.parser.PdcpInfo;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
-import com.example.procedure.parser.PdcpInfo;
 
 @Service
 public class DecryptResultReentryServiceImpl implements DecryptResultReentryService {
@@ -36,6 +36,9 @@ public class DecryptResultReentryServiceImpl implements DecryptResultReentryServ
         req.setTraceId(buildTraceId(encryptedMsg));
         req.setSourceMsgId(encryptedMsg.getMsgId());
         req.setUeId(encryptedMsg.getUeId());
+
+        // 新增：把来源节点 ID 带进去
+        req.setSourceNodeId(encryptedMsg.getDecryptTargetNodeId());
 
         Set<String> wanted = Set.of(
                 "nas-5gs_raw", "nas-5gs", "nr-rrc",
@@ -76,7 +79,6 @@ public class DecryptResultReentryServiceImpl implements DecryptResultReentryServ
                 return "NR_RRC_UL_DCCH";
             }
 
-            // 默认兜底
             if ("DL".equals(dir)) return "NR_RRC_DL_DCCH";
             return "NR_RRC_UL_DCCH";
         }

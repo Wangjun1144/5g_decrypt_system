@@ -1,5 +1,8 @@
 package com.example.procedure.decodebridge;
 
+import lombok.Data;
+
+@Data
 public class PlaintextDecodeRequest {
 
     /**
@@ -47,6 +50,12 @@ public class PlaintextDecodeRequest {
      * 调试时是否保留 hexdump 文件
      */
     private boolean keepHexdumpFile = true;
+
+    /**
+     * 新增：
+     * 这次明文回流解析对应的原始加密节点 ID。
+     */
+    private String sourceNodeId;
 
     public String getPlainHex() {
         return plainHex;
