@@ -2,74 +2,69 @@ package com.example.procedure.service;
 
 import com.example.procedure.decrypt.DecryptAttemptResult;
 import com.example.procedure.model.SignalingMessage;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.example.procedure.processing.pending.PendingMessageRecord;
+import com.example.procedure.processing.pending.PendingMessageRepository;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
+import java.util.stream.Collectors;
 
+/**
+ * @deprecated 阶段 1/2 过渡门面。
+ *
+ * 设计说明：
+ * - 文档要求将等待状态抽象为 PendingMessageRepository。
+ * - 为减少一次性改动范围，当前保留旧类名作为兼容门面
+ * - 真正的状态存储已经下沉到 PendingMessageRepository
+ *
+ * 后续建议：
+ * - 新代码优先直接依赖 PendingMessageRepository 或 processing.pending 包中的新服务
+ * - 旧代码短期内仍可继续依赖 PendingMessageService
+ */
+@Deprecated
 @Service
 public class PendingMessageService {
 
-    private static final Logger log = LoggerFactory.getLogger(PendingMessageService.class);
+    private final PendingMessageRepository repository;
 
-    // 每个 UE 最多暂存多少条（先保守一些，后面可以调）
-    private static final int MAX_PER_UE = 2000;
-    // 暂存多久过期丢弃（毫秒）
-    private static final long TTL_MS = 24L * 60 * 60 * 1000;
+    public PendingMessageService(PendingMessageRepository repository) {
+        this.repository = repository;
+    }
 
-    private final Map<String, Deque<PendingItem>> pendingMap = new ConcurrentHashMap<>();
-
+    /**
+     * 兼容旧接口：将一条消息放入 pending 队列。
+     */
     public void enqueue(String ueId, SignalingMessage msg, DecryptAttemptResult.WaitReason reason) {
-        if (ueId == null) ueId = "UNKNOWN_UE";
-
-        Deque<PendingItem> q = pendingMap.computeIfAbsent(ueId, k -> new ArrayDeque<>());
-
-        cleanupExpired(q);
-
-        // 控制队列长度：超过上限丢最旧的
-        while (q.size() >= MAX_PER_UE) {
-            PendingItem dropped = q.pollFirst();
-            if (dropped != null) {
-                log.warn("Pending queue overflow, drop oldest. ueId={}, droppedMsgId={}", ueId, dropped.msgId);
-            }
-        }
-
-        PendingItem item = new PendingItem(
-                System.currentTimeMillis(),
-                safeMsgId(msg),
-                reason,
-                msg
+        repository.enqueue(
+                ueId,
+                new PendingItem(
+                        System.currentTimeMillis(),
+                        safeMsgId(msg),
+                        reason,
+                        msg
+                ).toRecord()
         );
-        q.addLast(item);
+    }
 
-        log.info("Enqueue pending msg. ueId={}, msgId={}, reason={}, size={}",
-                ueId, item.msgId, reason, q.size());
+    /**
+     * 兼容旧接口：批量拉取待处理消息。
+     */
+    public List<PendingItem> pollBatch(String ueId, int max) {
+        return repository.pollBatch(ueId, max)
+                .stream()
+                .map(PendingItem::fromRecord)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 兼容旧接口：重新入队。
+     */
+    public void requeue(String ueId, PendingItem item) {
+        repository.requeue(ueId, item.toRecord());
     }
 
     public int size(String ueId) {
-        Deque<PendingItem> q = pendingMap.get(ueId);
-        return q == null ? 0 : q.size();
-    }
-
-    // 暂时不实现 drain，后面你让做再补
-    // public List<PendingItem> drainReady(...) { ... }
-
-    private void cleanupExpired(Deque<PendingItem> q) {
-        long now = System.currentTimeMillis();
-        while (!q.isEmpty()) {
-            PendingItem first = q.peekFirst();
-            if (first == null) break;
-            if (now - first.enqueueAt > TTL_MS) {
-                PendingItem removed = q.pollFirst();
-                if (removed != null) {
-                    log.warn("Pending expired drop. msgId={}, reason={}", removed.msgId, removed.reason);
-                }
-            } else {
-                break;
-            }
-        }
+        return repository.size(ueId);
     }
 
     private String safeMsgId(SignalingMessage msg) {
@@ -80,6 +75,13 @@ public class PendingMessageService {
         }
     }
 
+    /**
+     * 旧版兼容对象。
+     *
+     * 说明：
+     * - 之所以暂时保留，是为了不让你前面已经改过的 PendingRetryService 再被迫一次性重写
+     * - 后续可以逐步替换为 PendingMessageRecord
+     */
     public static class PendingItem {
         public final long enqueueAt;
         public final String msgId;
@@ -92,35 +94,18 @@ public class PendingMessageService {
             this.reason = reason;
             this.msg = msg;
         }
-    }
 
-    public List<PendingItem> pollBatch(String ueId, int max) {
-        Deque<PendingItem> q = pendingMap.get(ueId);
-        if (q == null || q.isEmpty()) return List.of();
-
-        cleanupExpired(q);
-
-        List<PendingItem> out = new ArrayList<>(Math.min(max, q.size()));
-        for (int i = 0; i < max; i++) {
-            PendingItem it = q.pollFirst();
-            if (it == null) break;
-            out.add(it);
+        public PendingMessageRecord toRecord() {
+            return new PendingMessageRecord(enqueueAt, msgId, reason, msg);
         }
-        return out;
-    }
 
-    public void requeue(String ueId, PendingItem item) {
-        if (ueId == null) ueId = "UNKNOWN_UE";
-        Deque<PendingItem> q = pendingMap.computeIfAbsent(ueId, k -> new ArrayDeque<>());
-        cleanupExpired(q);
-
-        // 仍然要做队列上限保护
-        while (q.size() >= MAX_PER_UE) {
-            PendingItem dropped = q.pollFirst();
-            if (dropped != null) {
-                log.warn("Pending queue overflow(requeue), drop oldest. ueId={}, droppedMsgId={}", ueId, dropped.msgId);
-            }
+        public static PendingItem fromRecord(PendingMessageRecord record) {
+            return new PendingItem(
+                    record.getEnqueueAt(),
+                    record.getMsgId(),
+                    record.getReason(),
+                    record.getMessage()
+            );
         }
-        q.addLast(item);
     }
 }

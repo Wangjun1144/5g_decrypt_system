@@ -15,11 +15,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-final class ReentryNodeMergeSupport {
+/**
+ * 解密回流后的节点合并工具。
+ *
+ * 阶段 1 说明：
+ * - 该类仍保留在 service 包，避免一次性大搬迁
+ * - 但现在需要被 processing.message 包访问，因此必须提升为 public
+ * - 同时把外部会调用到的方法改成 public static
+ */
+public final class ReentryNodeMergeSupport {
 
-    private ReentryNodeMergeSupport() {}
+    private ReentryNodeMergeSupport() {
+    }
 
-    static boolean isBlank(String s) {
+    public static boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
     }
 
@@ -27,7 +36,7 @@ final class ReentryNodeMergeSupport {
     // 通用树查询
     // =========================
 
-    static MessageNode findOriginalTargetNode(SignalingMessage originalMsg, String sourceNodeId) {
+    public static MessageNode findOriginalTargetNode(SignalingMessage originalMsg, String sourceNodeId) {
         if (originalMsg == null || originalMsg.getMessageTree() == null || isBlank(sourceNodeId)) {
             return null;
         }
@@ -35,11 +44,10 @@ final class ReentryNodeMergeSupport {
     }
 
     /**
-     * 回流树真正的“根 payload 节点”：
+     * 回流树真正的根 payload 节点：
      * 取 ROOT 的第一个 child。
-     * 这比“默认第一个 NAS”更通用，适用于 NAS / RRC / PDCP 回流。
      */
-    static MessageNode findReparsedRootPayloadNode(SignalingMessage reparsedMsg) {
+    public static MessageNode findReparsedRootPayloadNode(SignalingMessage reparsedMsg) {
         if (reparsedMsg == null || reparsedMsg.getMessageTree() == null) return null;
 
         MessageTree t = reparsedMsg.getMessageTree();
@@ -55,7 +63,7 @@ final class ReentryNodeMergeSupport {
     // payload 查找
     // =========================
 
-    static NasInfo findNasByNodeId(SignalingMessage msg, String nodeId) {
+    public static NasInfo findNasByNodeId(SignalingMessage msg, String nodeId) {
         if (msg == null || isBlank(nodeId) || msg.getNasList() == null) return null;
         for (NasInfo nas : msg.getNasList()) {
             if (nas != null && nodeId.equals(nas.getNodeId())) {
@@ -65,7 +73,7 @@ final class ReentryNodeMergeSupport {
         return null;
     }
 
-    static RrcInfo findRrcByNodeId(SignalingMessage msg, String nodeId) {
+    public static RrcInfo findRrcByNodeId(SignalingMessage msg, String nodeId) {
         if (msg == null || isBlank(nodeId)) return null;
         RrcInfo rrc = msg.getRrcInfo();
         if (rrc != null && nodeId.equals(rrc.getNodeId())) {
@@ -74,7 +82,7 @@ final class ReentryNodeMergeSupport {
         return null;
     }
 
-    static PdcpInfo findPdcpByNodeId(SignalingMessage msg, String nodeId) {
+    public static PdcpInfo findPdcpByNodeId(SignalingMessage msg, String nodeId) {
         if (msg == null || isBlank(nodeId)) return null;
         PdcpInfo pdcp = msg.getPdcpInfo();
         if (pdcp != null && nodeId.equals(pdcp.getNodeId())) {
@@ -87,7 +95,7 @@ final class ReentryNodeMergeSupport {
     // NAS merge
     // =========================
 
-    static void preserveOriginalNasCipherTrace(NasInfo target) {
+    public static void preserveOriginalNasCipherTrace(NasInfo target) {
         if (target == null) return;
 
         if (isBlank(target.getOriginalFullNasPduHex())) {
@@ -98,7 +106,7 @@ final class ReentryNodeMergeSupport {
         }
     }
 
-    static void mergeNasPayloadFields(NasInfo target, NasInfo decodedRoot, String decryptPlainHex) {
+    public static void mergeNasPayloadFields(NasInfo target, NasInfo decodedRoot, String decryptPlainHex) {
         if (target == null || decodedRoot == null) return;
 
         preserveOriginalNasCipherTrace(target);
@@ -110,7 +118,6 @@ final class ReentryNodeMergeSupport {
         target.setEncrypted(false);
         target.setCipherTextHex(null);
 
-        // 直接把明文语义 merge 到原节点
         target.setNasNode(decodedRoot.getNasNode());
         target.setFullNasPduHex(decodedRoot.getFullNasPduHex());
 
@@ -143,7 +150,7 @@ final class ReentryNodeMergeSupport {
     // RRC merge
     // =========================
 
-    static void mergeRrcPayloadFields(RrcInfo target, RrcInfo decodedRoot) {
+    public static void mergeRrcPayloadFields(RrcInfo target, RrcInfo decodedRoot) {
         if (target == null || decodedRoot == null) return;
 
         target.setDirection(decodedRoot.getDirection());
@@ -171,22 +178,14 @@ final class ReentryNodeMergeSupport {
     // PDCP merge
     // =========================
 
-    static void preserveOriginalPdcpCipherTrace(PdcpInfo target) {
+    public static void preserveOriginalPdcpCipherTrace(PdcpInfo target) {
         if (target == null) return;
         if (isBlank(target.getOriginalSignallingDataHex())) {
             target.setOriginalSignallingDataHex(target.getSignallingDataHex());
         }
     }
 
-    /**
-     * AS/PDCP 解密后的目标节点仍然是原 PDCP 节点。
-     * 这里不把它替换成 RRC，而是：
-     * - 保留原 nodeId / 原树位置
-     * - 标记为已解密
-     * - 记住原始密文和明文
-     * - 语义子树（RRC/NAS）用 graftChildren 接回原 PDCP 节点下面
-     */
-    static void mergePdcpDecryptTrace(PdcpInfo target, String decryptPlainHex, String decryptMacHex) {
+    public static void mergePdcpDecryptTrace(PdcpInfo target, String decryptPlainHex, String decryptMacHex) {
         if (target == null) return;
 
         preserveOriginalPdcpCipherTrace(target);
@@ -206,18 +205,7 @@ final class ReentryNodeMergeSupport {
     // 子树 graft
     // =========================
 
-    /**
-     * 把回流根节点本身 merge 到 sourceNodeId 后，决定是否 graft root or graft children：
-     *
-     * - sameTypeAsTarget = true：
-     *   回流根和原目标是同类型（例如 NAS -> NAS）。
-     *   此时只 graft 回流根的 children。
-     *
-     * - sameTypeAsTarget = false：
-     *   回流根和原目标不是同类型（例如 PDCP 解密后得到 RRC 根）。
-     *   此时要把“回流根整棵树” graft 到原目标下面。
-     */
-    static void graftReparsedTreeIntoOriginal(
+    public static void graftReparsedTreeIntoOriginal(
             SignalingMessage originalMsg,
             SignalingMessage reparsedMsg,
             String sourceNodeId,
@@ -316,7 +304,7 @@ final class ReentryNodeMergeSupport {
         return n;
     }
 
-    static boolean isSameNodeType(MessageNode target, MessageNode reparsedRoot) {
+    public static boolean isSameNodeType(MessageNode target, MessageNode reparsedRoot) {
         if (target == null || reparsedRoot == null) return false;
         MessageNodeType a = target.getNodeType();
         MessageNodeType b = reparsedRoot.getNodeType();

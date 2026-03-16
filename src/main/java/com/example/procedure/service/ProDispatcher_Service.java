@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
  * 根据流程类型/消息类别，后续可以扩展调用解密、解析、上下文更新等。
  * 现在先只打印日志，方便你验证整体链路。
  */
+@Deprecated
 @Service
 public class ProDispatcher_Service {
     private static final Logger log = LoggerFactory.getLogger(ProDispatcher_Service.class);

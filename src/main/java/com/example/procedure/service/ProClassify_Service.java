@@ -12,6 +12,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+@Deprecated
 @Service
 @RequiredArgsConstructor
 public class ProClassify_Service {
