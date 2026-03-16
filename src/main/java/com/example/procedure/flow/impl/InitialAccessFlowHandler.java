@@ -8,7 +8,11 @@ import com.example.procedure.rule.PhaseDef;
 import com.example.procedure.util.ProcedureProgressUtil;
 
 import java.util.List;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
 
+@Component
+@Order(10)
 public class InitialAccessFlowHandler implements FlowHandler {
 
     private static final int IA_MERGE_THRESHOLD = 35;

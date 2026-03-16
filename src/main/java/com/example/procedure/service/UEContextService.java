@@ -1,5 +1,7 @@
 package com.example.procedure.service;
 
+import com.example.procedure.context.UeContextUpdateDispatcher;
+import com.example.procedure.context.UeContextUpdateSupport;
 import com.example.procedure.keyderivation.KeyDerivationNative;
 import com.example.procedure.parser.*;
 import com.example.procedure.model.SignalingMessage;
@@ -17,17 +19,23 @@ public class UEContextService {
     private static final String UE_CTX_KEY_PREFIX      = "ue:ctx:";
     private static final String MAP_AMF_UE_KEY_PREFIX  = "ue:map:amf:";
     private static final String MAP_RAN_UE_KEY_PREFIX  = "ue:map:ran:";
-    private static final String MAP_CRNTI_KEY_PREFIX   = "ue:map:crnti:"; // 示例：加 cellId 再拼 crnti
+    private static final String MAP_CRNTI_KEY_PREFIX   = "ue:map:crnti:";
 
-    private static final Duration TTL = Duration.ofHours(1); // DEMO：先给 1 小时
+    private static final Duration TTL = Duration.ofHours(1);
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final UeContextUpdateDispatcher updateDispatcher;
+    private final UeContextUpdateSupport updateSupport;
 
     public UEContextService(StringRedisTemplate redisTemplate,
-                            ObjectMapper objectMapper) {
+                            ObjectMapper objectMapper,
+                            UeContextUpdateDispatcher updateDispatcher,
+                            UeContextUpdateSupport updateSupport) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.updateDispatcher = updateDispatcher;
+        this.updateSupport = updateSupport;
     }
 
     private String redisKeyForCtx(String ueId) {
@@ -77,294 +85,24 @@ public class UEContextService {
     // ============== 核心改造：根据 6 条关键消息更新 UE 上下文 ==============
 
     /**
-     * 根据单条信令消息更新 UE 上下文。
+     * 根据 IA 流程关键消息更新 UEContext
      *
-     * 约定 msgType（和你前面 parseAndMerge 改名保持一致）：
-     *  1) "RRCSetupComplete"
-     *  2) "Initial UE Message"
-     *  3) "Nausf_UEAuthentication_Authenticate Response"
-     *  4) "NAS SecurityModeCommand"
-     *  5) "Initial Context Setup Request"
-     *  6) "RRC SecurityModeCommand"
+     * 本次重构后：
+     * - UEContextService 只保留“加载上下文 / 保存上下文 / 分发更新规则”的职责
+     * - 具体每种消息如何更新，由各个 UeContextUpdater 单独负责
      */
     public void updateOnInitialAccess(SignalingMessage msg, String procedureId) {
         String ueId = msg.getUeId();
         if (ueId == null || ueId.isEmpty()) {
-            // 没有 ueId 的包这里先忽略（或者打日志）
             return;
         }
 
         UEContext ctx = getOrCreate(ueId);
-        // 如果 UEContext 里有 procedureId / lastProcedureId 字段，也可以顺便记一下
-        // ctx.setLastProcedureId(procedureId);
 
-        String type = msg.getMsgType();
+        // 将“按消息类型更新上下文”的规则交给 updater 分发器处理
+        updateDispatcher.dispatch(msg, ctx, procedureId, updateSupport);
 
-        // 1) RRCSetupComplete：保存 C-RNTI
-        if ("RRCSetupComplete".equals(type)) {
-            MacInfo mac = msg.getMacInfo();
-            if (mac != null) {
-                String crnti = mac.getRnti();
-                if (crnti != null && !crnti.isEmpty()) {
-                    ctx.setCrnti(crnti);
-                    // attachState 也可以顺便推进一下
-                    ctx.setAttachState("RRC_SETUP_COMPLETE");
-                    // TODO: 如果以后有小区 ID，可以在这里做 cellId+crnti 反查映射
-                    // redisTemplate.opsForValue().set(redisKeyForCrntiMap(cellId, crnti), ueId, TTL);
-                }
-            }
-        }
-
-        // 2) Initial UE Message：保存 RAN_UE_NGAP_ID
-        else if ("Initial UE Message".equals(type)) {
-            NgapInfo ngap = pickNAGPSecurityMode(msg.getNgapInfoList());
-            if (ngap != null) {
-                String ranUeNgapId = ngap.getRanUeNgapId();
-                if (ranUeNgapId != null && !ranUeNgapId.isEmpty()) {
-                    ctx.setRanUeNgapId(ranUeNgapId);
-                    ctx.setAttachState("NGAP_INITIAL_UE_MESSAGE");
-                    // 反查映射（RAN_UE_NGAP_ID -> ueId）也可以建起来，后面通过 N2 消息找 UE
-                    redisTemplate.opsForValue().set(
-                            redisKeyForRanMap(ranUeNgapId), ueId, TTL
-                    );
-                }
-            }
-        }
-
-        // 3) Nausf_UEAuthentication_Authenticate Response：保存 KSEAF
-        else if ("Nausf_UEAuthentication_Authenticate Response".equals(type)) {
-            NUARInfo nuar = msg.getNuarInfo();
-            if (nuar != null) {
-                String kseaf = nuar.getKseafHex();
-                String imsi  = nuar.getImsi(); // 这里就是 kamf 函数要的 supi 参数（纯数字）
-
-                if (kseaf == null || kseaf.isEmpty()) {
-                    // 有的结构里字段可能叫 kseaf，这里兼容一下
-                    kseaf = nuar.getKseafHex();
-                }
-
-                if (imsi != null && !imsi.isEmpty()) {
-                    ctx.setSupi(imsi);
-                }
-
-                if (kseaf != null && !kseaf.isEmpty()) {
-                    ctx.setKSeaf(kseaf);
-                    ctx.setAttachState("AUTH_COMPLETED");
-                }
-
-                // 推导 KAMF：supi 用 imsi（001010...）
-                if ((imsi != null && !imsi.isEmpty()) && (kseaf != null && !kseaf.isEmpty())) {
-                    byte[] abba = new byte[]{0x00, 0x00};
-                    String kamf = KeyDerivationNative.kamfFromKseaf(imsi, abba, kseaf);
-                    if (kamf != null && !kamf.isEmpty()) {
-                        ctx.setKAmf(kamf);
-                        // --- 补偿推导：如果此时已有 NAS 算法号，则用新到的 KAMF 推 KNasEnc/KNasInt ---
-                        String kamf2 = ctx.getKAmf();
-                        if (kamf2 != null && !kamf2.isEmpty()) {
-                            boolean needEnc = (ctx.getKNasEnc() == null || ctx.getKNasEnc().isEmpty());
-                            boolean needInt = (ctx.getKNasInt() == null || ctx.getKNasInt().isEmpty());
-
-                            String nasEncAlgStr = ctx.getNasCipherAlg();
-                            String nasIntAlgStr = ctx.getNasIntAlg();
-
-                            if ((needEnc || needInt) &&
-                                    nasEncAlgStr != null && !nasEncAlgStr.isEmpty() &&
-                                    nasIntAlgStr != null && !nasIntAlgStr.isEmpty()) {
-
-                                int encNo = parseAlgNo123(nasEncAlgStr);
-                                int intNo = parseAlgNo123(nasIntAlgStr);
-                                int encAlgIdentity = mapAlgIdentity(encNo);
-                                int intAlgIdentity = mapAlgIdentity(intNo);
-
-                                if (needEnc) {
-                                    String kNasEnc = KeyDerivationNative.algorithmKeyDerivation(0x01, encAlgIdentity, kamf2);
-                                    if (kNasEnc != null && !kNasEnc.isEmpty()) ctx.setKNasEnc(kNasEnc);
-                                }
-                                if (needInt) {
-                                    String kNasInt = KeyDerivationNative.algorithmKeyDerivation(0x02, intAlgIdentity, kamf2);
-                                    if (kNasInt != null && !kNasInt.isEmpty()) ctx.setKNasInt(kNasInt);
-                                }
-                            }
-                        }
-
-                    }
-                }
-
-            }
-        }
-
-        // 4) NAS SecurityModeCommand：保存 NAS 加密/完整性算法
-        else if ("NAS SecurityModeCommand".equals(type)) {
-            NasInfo smcNas = pickNasSecurityMode(msg.getNasList());
-            if (smcNas != null) {
-
-                // 1) 算法编号（字符串 "1"/"2"/"3"）
-                String nasIntAlgStr = smcNas.getNas_integrityProtAlgorithm(); // 完保算法号
-                String nasEncAlgStr = smcNas.getNas_cipheringAlgorithm();     // 加密算法号
-
-                if (nasIntAlgStr != null && !nasIntAlgStr.isEmpty()) {
-                    ctx.setNasIntAlg(nasIntAlgStr);
-                }
-                if (nasEncAlgStr != null && !nasEncAlgStr.isEmpty()) {
-                    ctx.setNasCipherAlg(nasEncAlgStr);
-                }
-
-                // 2) 获取 KAMF（优先 ctx，没有就从 Redis 再拉一次）
-                String kamf = ctx.getKAmf();
-                if (kamf == null || kamf.isEmpty()) {
-                    UEContext latest = getContext(ctx.getUeId());
-                    if (latest != null) {
-                        kamf = latest.getKAmf();
-                        if (ctx.getKAmf() == null) ctx.setKAmf(kamf);
-                    }
-                }
-
-                // 没有 KAMF 无法推导
-                if (kamf == null || kamf.isEmpty()) {
-                    ctx.setAttachState("NAS_SMC");
-                    saveContext(ctx);
-                    return;
-                }
-
-                // 3) 解析并映射 algorithm_identity
-                int encNo = parseAlgNo123(nasEncAlgStr); // 1/2/3
-                int intNo = parseAlgNo123(nasIntAlgStr); // 1/2/3
-
-                int encAlgIdentity = mapAlgIdentity(encNo); // NEA*_NIA*
-                int intAlgIdentity = mapAlgIdentity(intNo); // NEA*_NIA*
-
-                // 4) 推导 NAS ENC key：N_NAS_ENC_ALG = 0x01
-                String kNasEnc = KeyDerivationNative.algorithmKeyDerivation(
-                        0x01,
-                        encAlgIdentity,
-                        kamf
-                );
-
-                // 5) 推导 NAS INT key：N_NAS_INT_ALG = 0x02
-                String kNasInt = KeyDerivationNative.algorithmKeyDerivation(
-                        0x02,
-                        intAlgIdentity,
-                        kamf
-                );
-
-                if (kNasEnc != null && !kNasEnc.isEmpty()) {
-                    ctx.setKNasEnc(kNasEnc);
-                }
-                if (kNasInt != null && !kNasInt.isEmpty()) {
-                    ctx.setKNasInt(kNasInt);
-                }
-
-                ctx.setAttachState("NAS_SMC");
-            }
-        }
-
-        // 5) Initial Context Setup Request：保存 NGAP SecurityKey（KgNB）
-        else if ("Initial Context Setup Request".equals(type)) {
-            NgapInfo ngap = pickNAGPSecurityMode(msg.getNgapInfoList());
-            if (ngap != null) {
-                String securityKeyHex = ngap.getSecurityKeyHex();
-                if (securityKeyHex != null && !securityKeyHex.isEmpty()) {
-                    ctx.setSecurityKeyHex(securityKeyHex);
-                    ctx.setAttachState("INITIAL_CONTEXT_SETUP");
-                    // --- 补偿推导：如果此时已有 RRC 算法号，则用新到的 KGNB 推 KRrcEnc/KRrcInt ---
-                    String kgnb = ctx.getSecurityKeyHex();
-                    if (kgnb != null && !kgnb.isEmpty()) {
-                        // 只有在还没推出来时才推（幂等）
-                        boolean needEnc = (ctx.getKRrcEnc() == null || ctx.getKRrcEnc().isEmpty());
-                        boolean needInt = (ctx.getKRrcInt() == null || ctx.getKRrcInt().isEmpty());
-
-                        String cipherAlgStr = ctx.getRrcCipherAlg();
-                        String integrityAlgStr = ctx.getRrcIntAlg();
-
-                        if ((needEnc || needInt) &&
-                                cipherAlgStr != null && !cipherAlgStr.isEmpty() &&
-                                integrityAlgStr != null && !integrityAlgStr.isEmpty()) {
-
-                            int encNo = parseAlgNo123(cipherAlgStr);
-                            int intNo = parseAlgNo123(integrityAlgStr);
-                            int encAlgIdentity = mapAlgIdentity(encNo);
-                            int intAlgIdentity = mapAlgIdentity(intNo);
-
-                            if (needEnc) {
-                                String kRrcEnc = KeyDerivationNative.algorithmKeyDerivation(0x03, encAlgIdentity, kgnb);
-                                if (kRrcEnc != null && !kRrcEnc.isEmpty()) ctx.setKRrcEnc(kRrcEnc);
-                            }
-                            if (needInt) {
-                                String kRrcInt = KeyDerivationNative.algorithmKeyDerivation(0x04, intAlgIdentity, kgnb);
-                                if (kRrcInt != null && !kRrcInt.isEmpty()) ctx.setKRrcInt(kRrcInt);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 6) RRC SecurityModeCommand：保存 RRC 层完整性/加密算法 + 推导 RRC ENC/INT KEY（用 KGNB）
-        else if ("RRC SecurityModeCommand".equals(type)) {
-            RrcInfo rrc = msg.getRrcInfo();
-            if (rrc != null) {
-                String integrityAlgStr = rrc.getIntegrityProtAlgorithm(); // "1"/"2"/"3"
-                String cipherAlgStr    = rrc.getCipheringAlgorithm();     // "1"/"2"/"3"
-
-                if (integrityAlgStr != null && !integrityAlgStr.isEmpty()) {
-                    ctx.setRrcIntAlg(integrityAlgStr);
-                }
-                if (cipherAlgStr != null && !cipherAlgStr.isEmpty()) {
-                    ctx.setRrcCipherAlg(cipherAlgStr);
-                }
-
-                // 1) 取 KGNB（你这里存的是 Initial Context Setup Request 里的 SecurityKeyHex）
-                String kgnb = ctx.getSecurityKeyHex();
-                if (kgnb == null || kgnb.isEmpty()) {
-                    // 兜底：从 Redis 再拉一次
-                    UEContext latest = getContext(ctx.getUeId());
-                    if (latest != null) {
-                        kgnb = latest.getSecurityKeyHex();
-                        if (ctx.getSecurityKeyHex() == null) ctx.setSecurityKeyHex(kgnb);
-                    }
-                }
-
-                // 没有 KGNB 推不了 key：只记录算法与状态
-                if (kgnb == null || kgnb.isEmpty()) {
-                    ctx.setAttachState("RRC_SMC");
-                    saveContext(ctx);
-                    return;
-                }
-
-                // 2) 解析并映射 algorithm_identity（各用各的编号）
-                int encNo = parseAlgNo123(cipherAlgStr);       // 1/2/3
-                int intNo = parseAlgNo123(integrityAlgStr);    // 1/2/3
-
-                int encAlgIdentity = mapAlgIdentity(encNo);    // NEA*_NIA*
-                int intAlgIdentity = mapAlgIdentity(intNo);
-
-                // 3) 推导 RRC ENC key：N_RRC_ENC_ALG = 0x03
-                String kRrcEnc = KeyDerivationNative.algorithmKeyDerivation(
-                        0x03,
-                        encAlgIdentity,
-                        kgnb
-                );
-
-                // 4) 推导 RRC INT key：N_RRC_INT_ALG = 0x04
-                String kRrcInt = KeyDerivationNative.algorithmKeyDerivation(
-                        0x04,
-                        intAlgIdentity,
-                        kgnb
-                );
-
-                if (kRrcEnc != null && !kRrcEnc.isEmpty()) {
-                    ctx.setKRrcEnc(kRrcEnc);
-                }
-                if (kRrcInt != null && !kRrcInt.isEmpty()) {
-                    ctx.setKRrcInt(kRrcInt);
-                }
-
-                ctx.setAttachState("RRC_SMC");
-            }
-        }
-
-
-        // 最后统一落库
+        // 最后统一落库，保持原行为
         saveContext(ctx);
     }
 

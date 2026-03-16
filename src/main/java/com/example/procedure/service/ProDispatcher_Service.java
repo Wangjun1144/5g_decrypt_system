@@ -28,7 +28,8 @@ public class ProDispatcher_Service {
         log.info("Dispatch msg. ueId={}, msgType={}, category={}, procedureType={}, procedureId={}",
                 msg.getUeId(), msg.getMsgType(), category, procedureType, procedureId);
 
-        // 仅作为示例：对 IA 流程驱动信令，顺带更新一下 UE 上下文
+        // 对 IA 流程驱动信令，更新 UE 上下文。
+        // 具体字段提取/索引写入/密钥补偿推导等逻辑，已下沉到 UeContextUpdater 体系中。
         if ("IA".equalsIgnoreCase(procedureType) && category == MessageCategory.PROCEDURE_DRIVING) {
             ueContextService.updateOnInitialAccess(msg, procedureId);
         }

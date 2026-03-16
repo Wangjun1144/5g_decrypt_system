@@ -9,6 +9,11 @@ import com.example.procedure.util.ProcedureProgressUtil;
 import java.util.List;
 import java.util.Locale;
 
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
+
+@Component
+@Order(20)
 public class XnHandoverFlowHandler implements FlowHandler {
 
     private static final int XHO_MERGE_THRESHOLD = 35;

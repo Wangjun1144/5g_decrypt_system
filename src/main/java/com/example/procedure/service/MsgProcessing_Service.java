@@ -65,130 +65,192 @@ public class MsgProcessing_Service {
         return ctx != null && !isBlank(ctx.getKRrcEnc()) && !isBlank(ctx.getKRrcInt());
     }
 
-    public MessageProcessingResult process(SignalingMessage msg){
+    /**
+     * 消息处理主入口
+     *
+     * 处理顺序：
+     * 1. 分类
+     * 2. 拉取 UEContext
+     * 3. 如有加密则优先处理解密/等待/失败
+     * 4. 如果是流程相关消息，则做流程匹配
+     * 5. 做后续分发
+     * 6. 上下文更新后，重试 pending 解密消息
+     * 7. 返回处理结果
+     *
+     * 说明：
+     * - 本次重构不改变功能，只减少重复代码、降低主方法复杂度
+     */
+    public MessageProcessingResult process(SignalingMessage msg) {
+        MessageProcessingContext context = new MessageProcessingContext(msg);
 
-        // 0) 先拿加密状态（你已在 msg.isEncrypted() / getEncryptedType() 里能算出来）
-        boolean encrypted = msg.getEncrypted();
-        String encType = msg.getEncryptedType(); // NAS / PDCP / NAS+PDCP / NONE
+        // 1) 先做消息分类
+        context.setCategory(messageCategoryClassifier.classify(msg));
 
-        MessageCategory category = messageCategoryClassifier.classify(msg);
+        // 2) 读取当前 UEContext
+        context.setUeContext(ueContextService.getContext(msg.getUeId()));
 
-        UEContext ctx = ueContextService.getContext(msg.getUeId());
+        // 3) 如果消息加密，统一在这里处理，不再分散到多个分支里重复写
+        MessageProcessingResult earlyReturn = handleEncryptedMessageIfNeeded(context);
+        if (earlyReturn != null) {
+            return earlyReturn;
+        }
+
+        // 4) 只有流程相关消息才做流程匹配
+        if (isProcedureMessage(context.getCategory())) {
+            context.setProcedureMatchResult(proClassifyService.handleMessage(msg));
+        }
+
+        // 5) 统一分发
+        dispatchMessage(context);
+
+        // 6) dispatch 后上下文可能已经被更新（例如拿到了新的 key）
+        //    所以这里重新读取最新上下文，再尝试重试 pending 解密消息
+        UEContext refreshedCtx = ueContextService.getContext(msg.getUeId());
+        retryPendingDecrypt(msg.getUeId(), refreshedCtx);
+
+        // 7) 构造统一返回结果
+        return buildResult(context);
+    }
+
+
+    /**
+     * 判断消息是否属于流程相关消息
+     *
+     * 目前只有流程驱动消息和流程辅助消息需要进入流程识别模块。
+     */
+    private boolean isProcedureMessage(MessageCategory category) {
+        return category == MessageCategory.PROCEDURE_DRIVING
+                || category == MessageCategory.PROCEDURE_AUX;
+    }
+
+    /**
+     * 统一处理“加密消息”的入口
+     *
+     * 返回值约定：
+     * - 返回 null：表示后续流程继续执行
+     * - 返回非 null：表示当前消息已经完成阶段性处理，应提前返回
+     */
+    private MessageProcessingResult handleEncryptedMessageIfNeeded(MessageProcessingContext context) {
+        if (!context.isEncrypted()) {
+            return null;
+        }
+
+        SignalingMessage msg = context.getMessage();
+        String encType = context.getEncryptedType();
+        UEContext ueContext = context.getUeContext();
+
+        DecryptAttemptResult dr = tryDecryptByType(msg, encType, ueContext);
+        context.setDecryptResult(dr);
+
+        // 解密成功：先回流重解析；如果解密后内部仍然加密，则递归继续处理
+        if (dr.getStatus() == DecryptAttemptResult.Status.OK) {
+            return handleDecryptSuccess(context);
+        }
+
+        // 等待型结果：说明缺 key / 缺算法 / 缺参数，需要进 pending 队列
+        if (dr.getStatus() == DecryptAttemptResult.Status.WAITING) {
+            pendingMessageService.enqueue(msg.getUeId(), msg, dr.getReason());
+
+            log.info("Decrypt waiting: ueId={}, reason={}, msgId={}, encType={}",
+                    msg.getUeId(), dr.getReason(), msg.getMsgId(), encType);
+
+            return buildResult(context);
+        }
+
+        // 失败型结果：先保留原行为，记录日志后继续后续流程
+        if (dr.getStatus() == DecryptAttemptResult.Status.FAILED) {
+            log.warn("Decrypt failed: ueId={}, msgId={}, encType={}, err={}",
+                    msg.getUeId(), msg.getMsgId(), encType, dr.getError());
+        }
+
+        return null;
+    }
+
+    /**
+     * 解密成功后的处理
+     *
+     * 注意：
+     * - reenterDecryptedMessage(...) 会把明文重新解析并合并回原消息树
+     * - 如果合并后消息内部仍然显示为加密，则继续递归调用 process(msg)
+     */
+    private MessageProcessingResult handleDecryptSuccess(MessageProcessingContext context) {
+        SignalingMessage msg = context.getMessage();
+        String encType = context.getEncryptedType();
+
+        try {
+            reenterDecryptedMessage(msg, encType);
+        } catch (Exception e) {
+            log.error("Decrypt reentry failed: ueId={}, msgId={}, encType={}, err={}",
+                    msg.getUeId(), msg.getMsgId(), encType, e.getMessage(), e);
+            return buildResult(context);
+        }
+
+        // 如果回流后的消息内部仍有加密层，则继续对同一条消息递归处理
+        if (Boolean.TRUE.equals(msg.getEncrypted())) {
+            log.info("Decrypt recursion continue: ueId={}, msgId={}, depth={}, encType={}, path={}",
+                    msg.getUeId(), msg.getMsgId(), safeDecryptDepth(msg),
+                    msg.getEncryptedType(), msg.getDecryptPath());
+            return process(msg);
+        }
+
+        return null;
+    }
+
+    /**
+     * 统一做消息分发
+     *
+     * 这里把 procedureId / procedureTypeCode 的组装逻辑收口，
+     * 避免 process(...) 主流程里出现太多细节代码。
+     */
+    private void dispatchMessage(MessageProcessingContext context) {
+        SignalingMessage msg = context.getMessage();
+
         String procedureId = null;
         String procedureTypeCode = null;
 
-        if(category == MessageCategory.PROCEDURE_DRIVING ||
-                category == MessageCategory.PROCEDURE_AUX){
+        if (context.getProcedureMatchResult() != null
+                && context.getProcedureMatchResult().getStatus() == 0) {
+            procedureId = context.getProcedureMatchResult().getProcedureId();
 
-            // 2.1) 是否需要解密（关键：只有“流程判断依赖明文”才解密）
-            if (encrypted) {
-                DecryptAttemptResult dr = tryDecryptByType(msg, encType, ctx);
-                if (dr.getStatus() == DecryptAttemptResult.Status.OK) {
-                    try {
-                        reenterDecryptedMessage(msg, encType);
-                    } catch (Exception e) {
-                        log.error("Decrypt reentry failed: ueId={}, msgId={}, encType={}, err={}",
-                                msg.getUeId(), msg.getMsgId(), encType, e.getMessage(), e);
-                        return new MessageProcessingResult(
-                                msg.getUeId(), msg.getMsgType(), category, procedureId, procedureTypeCode
-                        );
-                    }
-
-                    // 回流补丁已经合并回原 msg
-                    // 如果内部还存在加密层，则继续对同一个 msg 递归处理
-                    if (Boolean.TRUE.equals(msg.getEncrypted())) {
-                        log.info("Decrypt recursion continue: ueId={}, msgId={}, depth={}, encType={}, path={}",
-                                msg.getUeId(), msg.getMsgId(), safeDecryptDepth(msg),
-                                msg.getEncryptedType(), msg.getDecryptPath());
-                        return process(msg);
-                    }
-                }
-
-                if (dr.getStatus() == DecryptAttemptResult.Status.WAITING) {
-
-                    pendingMessageService.enqueue(msg.getUeId(), msg, dr.getReason());
-                    // 先阶段性结束（下一步再加 pending）
-                    log.info("Decrypt waiting: ueId={}, reason={}, msgId={}, encType={}",
-                            msg.getUeId(), dr.getReason(), msg.getMsgId(), encType);
-
-                    return new MessageProcessingResult(
-                            msg.getUeId(), msg.getMsgType(), category, procedureId, procedureTypeCode
-                    );
-                }
-
-                if (dr.getStatus() == DecryptAttemptResult.Status.FAILED) {
-                    log.warn("Decrypt failed: ueId={}, msgId={}, encType={}, err={}",
-                            msg.getUeId(), msg.getMsgId(), encType, dr.getError());
-                    // 失败你想不想继续下放？现在先继续下放（最小影响）
-                    // 也可以选择 return
-                }
-            }
-
-            ProcedureMatchResult r = proClassifyService.handleMessage(msg);
-
-            if (r != null && r.getStatus() == 0) {
-                procedureId = r.getProcedureId();
-                ProcedureTypeEnum typeEnum = r.getProcedureType();
-                if (typeEnum != null) {
-                    // 这里用枚举的 code 传给后面的模块
-                    procedureTypeCode = typeEnum.getCode(); // 需要你在枚举里暴露 getCode()
-                }
-            } else {
-                // 你可以记录一下日志，方便排查
-                // log.warn("Procedure match failed, status={}, msg={}", r.getStatus(), r.getMessage());
-            }
-
-        }else{
-            if (encrypted) {
-                DecryptAttemptResult dr = tryDecryptByType(msg, encType, ctx);
-                if (dr.getStatus() == DecryptAttemptResult.Status.OK) {
-                    try {
-                        reenterDecryptedMessage(msg, encType);
-                    } catch (Exception e) {
-                        log.error("Decrypt reentry failed: ueId={}, msgId={}, encType={}, err={}",
-                                msg.getUeId(), msg.getMsgId(), encType, e.getMessage(), e);
-                        return new MessageProcessingResult(
-                                msg.getUeId(), msg.getMsgType(), category, procedureId, procedureTypeCode
-                        );
-                    }
-
-                    // 回流补丁已经合并回原 msg
-                    // 如果内部还存在加密层，则继续对同一个 msg 递归处理
-                    if (Boolean.TRUE.equals(msg.getEncrypted())) {
-                        log.info("Decrypt recursion continue: ueId={}, msgId={}, depth={}, encType={}, path={}",
-                                msg.getUeId(), msg.getMsgId(), safeDecryptDepth(msg),
-                                msg.getEncryptedType(), msg.getDecryptPath());
-                        return process(msg);
-                    }
-                }
-
-                if (dr.getStatus() == DecryptAttemptResult.Status.WAITING) {
-                    pendingMessageService.enqueue(msg.getUeId(), msg, dr.getReason());
-                    log.info("Decrypt waiting: ueId={}, reason={}, msgId={}, encType={}",
-                            msg.getUeId(), dr.getReason(), msg.getMsgId(), encType);
-
-                    return new MessageProcessingResult(
-                            msg.getUeId(), msg.getMsgType(), category, procedureId, procedureTypeCode
-                    );
-                }
-
-                if (dr.getStatus() == DecryptAttemptResult.Status.FAILED) {
-                    log.warn("Decrypt failed: ueId={}, msgId={}, encType={}, err={}",
-                            msg.getUeId(), msg.getMsgId(), encType, dr.getError());
-                    // 失败你想不想继续下放？现在先继续下放（最小影响）
-                    // 也可以选择 return
-                }
+            ProcedureTypeEnum typeEnum = context.getProcedureMatchResult().getProcedureType();
+            if (typeEnum != null) {
+                procedureTypeCode = typeEnum.getCode();
             }
         }
-        proDispatcherService.dispatch(msg, category, procedureId, procedureTypeCode);
 
-        // ✅ 只要 ctx 现在有 key，就尝试消化 pending（不做二次流程）
-        retryPendingDecrypt(msg.getUeId(), ctx);
-        // 4️⃣ 返回一个简单结果，方便测试 / 上层查看
+        proDispatcherService.dispatch(
+                msg,
+                context.getCategory(),
+                procedureId,
+                procedureTypeCode
+        );
+    }
+
+    /**
+     * 统一构造返回值
+     *
+     * 这样无论是主流程结束、等待返回、异常后返回，都复用同一套结果构造逻辑。
+     */
+    private MessageProcessingResult buildResult(MessageProcessingContext context) {
+        String procedureId = null;
+        String procedureTypeCode = null;
+
+        if (context.getProcedureMatchResult() != null
+                && context.getProcedureMatchResult().getStatus() == 0) {
+            procedureId = context.getProcedureMatchResult().getProcedureId();
+
+            ProcedureTypeEnum typeEnum = context.getProcedureMatchResult().getProcedureType();
+            if (typeEnum != null) {
+                procedureTypeCode = typeEnum.getCode();
+            }
+        }
+
+        SignalingMessage msg = context.getMessage();
+
         return new MessageProcessingResult(
                 msg.getUeId(),
                 msg.getMsgType(),
-                category,
+                context.getCategory(),
                 procedureId,
                 procedureTypeCode
         );
@@ -196,8 +258,17 @@ public class MsgProcessing_Service {
 
 
 
+    /**
+     * 按加密类型选择解密策略
+     *
+     * 注意：
+     * 这里不改变原有功能，只修复一个问题：
+     * normalizedEncType 之前算出来了，但原代码后面判断时仍使用 encType，
+     * 导致规范化结果实际上没有生效。
+     */
     private DecryptAttemptResult tryDecryptByType(SignalingMessage msg, String encType, UEContext ctx) {
         String normalizedEncType = normalizeEncType(encType);
+
         if ("NONE".equals(normalizedEncType)) {
             return DecryptAttemptResult.skip();
         }
@@ -211,27 +282,35 @@ public class MsgProcessing_Service {
 
         String url = "http://127.0.0.1:8004/decrypt";
 
-        if ("NAS".equals(encType)) {
+        // 仅 NAS 加密
+        if ("NAS".equals(normalizedEncType)) {
             return decryptNasLayers(url, msg, ctx);
         }
 
-        if ("PDCP".equals(encType)) {
-            return decryptAs(url, msg, ctx);   // 你定义：不是 NAS 就 AS
+        // 仅 PDCP/AS 加密
+        if ("PDCP".equals(normalizedEncType)) {
+            return decryptAs(url, msg, ctx);
         }
 
-        if ("NAS+PDCP".equals(encType)) {
+        // 先 NAS，后 PDCP
+        if ("NAS+PDCP".equals(normalizedEncType)) {
             DecryptAttemptResult nas = decryptNasLayers(url, msg, ctx);
-            if (nas.getStatus() == DecryptAttemptResult.Status.OK) return nas;
-            if (nas.getStatus() == DecryptAttemptResult.Status.WAITING) return nas;
 
-            DecryptAttemptResult pdcp = decryptAs(url, msg, ctx);
-            return pdcp;
-            // decryptAs(url, msg); // 如果你也需要 PDCP/AS 明文再打开
+            // 如果 NAS 这一步成功，先返回，后面会通过回流继续处理
+            if (nas.getStatus() == DecryptAttemptResult.Status.OK) {
+                return nas;
+            }
+
+            // 如果 NAS 仍在等待材料/密钥，也直接返回等待
+            if (nas.getStatus() == DecryptAttemptResult.Status.WAITING) {
+                return nas;
+            }
+
+            // NAS 不可解时，再尝试 PDCP
+            return decryptAs(url, msg, ctx);
         }
 
         return DecryptAttemptResult.skip();
-
-        // NONE：不做
     }
 
 
@@ -321,14 +400,21 @@ public class MsgProcessing_Service {
 
     private DecryptAttemptResult decryptAs(String url, SignalingMessage msg, UEContext ctx) {
         PdcpInfo pdcp = msg.getPdcpInfo();
-        if (pdcp == null || !pdcp.isPdcpencrypted()) return DecryptAttemptResult.skip();;
+        if (pdcp == null || !pdcp.isPdcpencrypted()) {
+            return DecryptAttemptResult.skip();
+        }
+
+        // 先判断上下文是否存在
+        if (ctx == null) {
+            return DecryptAttemptResult.waiting(DecryptAttemptResult.WaitReason.WAIT_RRC_KEYS);
+        }
 
         // 缺 key：等待
         if (isBlank(ctx.getKRrcEnc()) || isBlank(ctx.getKRrcInt())) {
             return DecryptAttemptResult.waiting(DecryptAttemptResult.WaitReason.WAIT_RRC_KEYS);
         }
 
-        // 缺算法号：等待（否则默认 NEA1/NIA1 可能会错）
+        // 缺算法号：等待
         if (isBlank(ctx.getRrcCipherAlg()) || isBlank(ctx.getRrcIntAlg())) {
             return DecryptAttemptResult.waiting(DecryptAttemptResult.WaitReason.WAIT_ALG);
         }
@@ -346,11 +432,11 @@ public class MsgProcessing_Service {
         req.encKey = ctx.getKRrcEnc();
         req.intKey = ctx.getKRrcInt();
 
-        req.encAlgo = mapRrcEncAlgo(ctx.getRrcCipherAlg()); // "NEA1/2/3"
-        req.intAlgo = mapRrcIntAlgo(ctx.getRrcIntAlg());    // "NIA1/2/3"
+        req.encAlgo = mapRrcEncAlgo(ctx.getRrcCipherAlg());
+        req.intAlgo = mapRrcIntAlgo(ctx.getRrcIntAlg());
 
-        req.count = pdcp.getSeqNumInt();                // TODO
-        req.bearer = 0;                                     // SRB1/2？需要你按 PDCP/RRC 场景定
+        req.count = pdcp.getSeqNumInt();
+        req.bearer = 0;
         req.direction = msg.getDirection();
 
         req.ciphertext = pdcp.getSignallingDataHex();
@@ -364,7 +450,6 @@ public class MsgProcessing_Service {
             return DecryptAttemptResult.failed("AS decrypt http failed: " + e.getMessage());
         }
 
-        // 假设你在类里有 ObjectMapper（Spring 注入或 new）
         DecryptResponse resp;
         try {
             resp = objectMapper.readValue(respJson, DecryptResponse.class);
@@ -372,25 +457,20 @@ public class MsgProcessing_Service {
             return DecryptAttemptResult.failed("AS decrypt invalid json: " + ex.getMessage());
         }
 
-        if (resp != null && resp.getDecryptStatus()!= null && (resp.getDecryptStatus().equals("DECRYPT_SUCCESS")) ) {
-            // ✅ 解密成功：写回 message
-            msg.setDecryptPlainHex(resp.getPlainData());
-            msg.setDecryptMacHex(normalizeHex(resp.getPlainMac())); // 建议归一化（去0x/冒号/空格）
+        if (resp != null
+                && resp.getDecryptStatus() != null
+                && resp.getDecryptStatus().equals("DECRYPT_SUCCESS")) {
 
-            // 新增：AS 解密的真实目标是当前 PDCP 节点
+            msg.setDecryptPlainHex(resp.getPlainData());
+            msg.setDecryptMacHex(normalizeHex(resp.getPlainMac()));
+
+            // PDCP/AS 解密的目标锚点是当前 PDCP 节点
             msg.setDecryptTargetLayer("PDCP");
             if (msg.getPdcpInfo() != null) {
                 msg.setDecryptTargetNodeId(msg.getPdcpInfo().getNodeId());
             }
+
             return DecryptAttemptResult.ok();
-
-            // 如果你还想把明文写回对应 NAS 层（多层情况下更推荐）
-            // nas.setPlainTextHex(resp.getPlaintext());
-            // nas.setDecryptMacHex(normalizeHex(resp.getMac()));
-
-        } else {
-            // ❌ 解密失败：你也可以记录失败信息（需要你在 SignalingMessage 加字段）
-            // msg.setDecryptError(resp != null ? resp.getMessage() : "decrypt failed");
         }
 
         return DecryptAttemptResult.failed("AS decrypt failed");

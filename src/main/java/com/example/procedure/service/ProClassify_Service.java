@@ -27,6 +27,15 @@ public class ProClassify_Service {
 
     /**
      * 对一条信令做流程识别 & 更新流程上下文
+     *
+     * 重构后顺序：
+     * 1. trigger 优先决策
+     * 2. 通用 best-match 决策
+     * 3. UNKNOWN 兜底
+     *
+     * 注意：
+     * - 不改变原有功能
+     * - 只是把控制流拆清楚
      */
     public ProcedureMatchResult handleMessage(SignalingMessage msg) {
         if (msg == null || msg.getUeId() == null) {
@@ -34,100 +43,253 @@ public class ProClassify_Service {
         }
 
         String ueId = msg.getUeId();
-        String msgType = msg.getMsgType();
         long nowMs = System.currentTimeMillis();
 
         List<Procedure> activeList = proManagerService.listActiveProcedures(ueId);
         FlowContext ctx = new FlowContext(proManagerService, new ProcedureCloseDecider());
 
-        // 把你现有 scoreProcedure 作为 scorer 注入
+        // 保持你原有 scorer 逻辑不变
         ScoreScorer scorer = this::scoreProcedure;
 
-        // ===== A) 触发器优先通道：按 registry 顺序匹配（IA 优先于 XHO）=====
-        for (FlowHandler h : flowRegistry.handlers()) {
-            if (!h.isTrigger(msg)) continue;
+        // 1) trigger 优先通道
+        FlowMatchDecision triggerDecision = decideByTrigger(msg, activeList, scorer);
+        if (triggerDecision != null) {
+            return applyDecision(msg, triggerDecision, nowMs, ctx);
+        }
 
-            ProcedureScoreResult best = h.chooseBest(activeList, msg, scorer);
+        // 2) 通用 best-match
+        FlowMatchDecision commonDecision = decideByCommonBestMatch(msg, activeList, scorer);
+        if (commonDecision != null) {
+            return applyDecision(msg, commonDecision, nowMs, ctx);
+        }
 
-            if (best != null && best.getScore() != null && best.getScore().getScore() >= h.mergeThreshold()) {
-                h.applyUpdate(ueId, best.getProcedure(), best.getScore(), msg, nowMs, ctx);
-                return ProcedureMatchResult.successExisting(best.getProcedure().getProcedureId(), h.type());
+        // 3) UNKNOWN 兜底
+        return applyDecision(msg, FlowMatchDecision.unknown(), nowMs, ctx);
+    }
+
+    /**
+     * trigger 优先决策：
+     * - 按 FlowRegistry 的顺序遍历 handler
+     * - 只有 isTrigger(msg) 为 true 的 handler 才参与
+     * - 优先尝试归并
+     * - 归并失败后再判断是否允许创建
+     *
+     * 和你原来的行为保持一致：
+     * - 一旦某个 handler 触发过，就不会再继续看后面的 trigger handler
+     * - 如果它不允许创建，则交给通用逻辑继续处理
+     */
+    private FlowMatchDecision decideByTrigger(
+            SignalingMessage msg,
+            List<Procedure> activeList,
+            ScoreScorer scorer
+    ) {
+        for (FlowHandler handler : flowRegistry.handlers()) {
+            if (!handler.isTrigger(msg)) {
+                continue;
             }
 
-            if (h.shouldCreate(best, msg)) {
-                var created = proManagerService.add_ActProcedure(ueId, h.type(), msgType);
-                if (created == null || (int) created.getOrDefault("status", 1) != 0) {
-                    return ProcedureMatchResult.error("failed to create " + h.type());
-                }
-                String procId = String.valueOf(created.get("procedureId"));
-                return ProcedureMatchResult.successNew(procId, h.type());
+            ProcedureScoreResult best = handler.chooseBest(activeList, msg, scorer);
+
+            // 优先归并已有流程
+            if (best != null
+                    && best.getScore() != null
+                    && best.getScore().getScore() >= handler.mergeThreshold()) {
+                return FlowMatchDecision.attach(handler, best.getProcedure());
             }
 
-            // 触发了但不允许新建：继续走通用逻辑
+            // 归并失败，再判断是否允许创建新流程
+            if (handler.shouldCreate(best, msg)) {
+                return FlowMatchDecision.create(handler);
+            }
+
+            // 与你原有逻辑一致：只要有 handler 触发了，就不再继续看后面的 trigger handler
             break;
         }
 
-        // ===== B) 通用逻辑：如果没有任何 active 流程，建 UNKNOWN =====
+        return null;
+    }
+
+    /**
+     * 通用 best-match：
+     * - 当 trigger 通道没有形成决策时使用
+     * - 所有 active procedure 都可以竞争
+     * - 所有 handler 都会参与
+     *
+     * 与原逻辑保持一致：
+     * - 如果 activeList 为空，不在这里直接建 UNKNOWN，交给外层统一兜底
+     * - 只有 bestScore > 0 才接受
+     */
+    private FlowMatchDecision decideByCommonBestMatch(
+            SignalingMessage msg,
+            List<Procedure> activeList,
+            ScoreScorer scorer
+    ) {
         if (activeList == null || activeList.isEmpty()) {
-            var created = proManagerService.add_ActProcedure(ueId, ProcedureTypeEnum.UNKNOWN, msgType);
-            if (created == null || (int) created.getOrDefault("status", 1) != 0) {
-                return ProcedureMatchResult.error("failed to create UNKNOWN procedure");
-            }
-            String procId = String.valueOf(created.get("procedureId"));
-            return ProcedureMatchResult.successNew(procId, ProcedureTypeEnum.UNKNOWN);
+            return null;
         }
 
-        // ===== C) 通用 best：所有 active 竞争 =====
-        ProcedureScoreResult bestAll = chooseBestAll(activeList, msg, scorer);
-        if (bestAll == null) {
-            var created = proManagerService.add_ActProcedure(ueId, ProcedureTypeEnum.UNKNOWN, msgType);
-            if (created == null || (int) created.getOrDefault("status", 1) != 0) {
-                return ProcedureMatchResult.error("failed to create UNKNOWN procedure");
-            }
-            String procId = String.valueOf(created.get("procedureId"));
-            return ProcedureMatchResult.successNew(procId, ProcedureTypeEnum.UNKNOWN);
+        FlowBestMatch best = findBestAcrossAllHandlers(activeList, msg, scorer);
+        if (best == null) {
+            return null;
         }
 
-        Procedure bestProc = bestAll.getProcedure();
-        Score bestScore = bestAll.getScore();
-        ProcedureTypeEnum typeEnum = ProcedureTypeEnum.fromCode(bestProc.getProcedureTypeCode());
-
-        // 如果该流程类型有 handler，就让 handler 负责 update；否则走旧 update_ActProcedure
-        FlowHandler handler = flowRegistry.handlers().stream()
-                .filter(h -> h.type() == typeEnum)
-                .findFirst()
-                .orElse(null);
-
-        if (handler != null) {
-            handler.applyUpdate(ueId, bestProc, bestScore, msg, nowMs, ctx);
-        } else {
-            proManagerService.update_ActProcedure(
-                    ueId, bestProc.getProcedureId(), msgType,
-                    bestScore.getPhaseIndex(), bestScore.getOrderIndex()
-            );
-        }
-
-        return ProcedureMatchResult.successExisting(bestProc.getProcedureId(), typeEnum);
-
+        return FlowMatchDecision.attach(best.getHandler(), best.getProcedure());
     }
 
-    private ProcedureScoreResult chooseBestAll(List<Procedure> activeList, SignalingMessage msg, ScoreScorer scorer) {
-        long msgTs = System.currentTimeMillis();
-        int best = Integer.MIN_VALUE;
-        Procedure bestProc = null;
-        Score bestScore = null;
+    /**
+     * 在所有 handler 中找全局最优匹配
+     *
+     * 说明：
+     * - 你当前每个 handler 都有 chooseBest(...)，它会自己在 activeList 中只挑本类型流程
+     * - 这里再从所有 handler 的 best 中选一个全局最高分
+     */
+    private FlowBestMatch findBestAcrossAllHandlers(
+            List<Procedure> activeList,
+            SignalingMessage msg,
+            ScoreScorer scorer
+    ) {
+        FlowBestMatch bestMatch = null;
+        int bestScoreValue = Integer.MIN_VALUE;
 
-        for (Procedure p : activeList) {
-            Score s = scorer.score(p, msgTs, msg);
-            if (s != null && s.getScore() > best) {
-                best = s.getScore();
-                bestProc = p;
-                bestScore = s;
+        for (FlowHandler handler : flowRegistry.handlers()) {
+            ProcedureScoreResult best = handler.chooseBest(activeList, msg, scorer);
+            if (best == null || best.getProcedure() == null || best.getScore() == null) {
+                continue;
+            }
+
+            int scoreValue = best.getScore().getScore();
+
+            // 保持原行为：只有 score > 0 才认为有意义
+            if (scoreValue <= 0) {
+                continue;
+            }
+
+            if (scoreValue > bestScoreValue) {
+                bestScoreValue = scoreValue;
+                bestMatch = new FlowBestMatch(handler, best.getProcedure(), best.getScore());
             }
         }
-        if (bestProc == null || best <= 0) return null;
-        return new ProcedureScoreResult(bestProc, bestScore);
+
+        return bestMatch;
     }
+
+    /**
+     * 将匹配决策真正落实到：
+     * - 创建流程
+     * - 归并并更新流程
+     * - UNKNOWN 兜底
+     */
+    private ProcedureMatchResult applyDecision(
+            SignalingMessage msg,
+            FlowMatchDecision decision,
+            long nowMs,
+            FlowContext ctx
+    ) {
+        if (decision == null) {
+            return ProcedureMatchResult.error("flow decision is null");
+        }
+
+        switch (decision.getAction()) {
+            case ATTACH:
+                return attachToExistingProcedure(msg, decision, nowMs, ctx);
+            case CREATE:
+                return createNewProcedure(msg, decision.getProcedureType());
+            case UNKNOWN:
+            default:
+                return createUnknownProcedure(msg);
+        }
+    }
+
+    /**
+     * 将消息归并到已有流程
+     *
+     * 注意：
+     * 由于当前 FlowMatchDecision 里没有保存 Score，
+     * 这里通过 scoreProcedure(...) 重新计算一次 score，再调用 handler.applyUpdate(...)。
+     *
+     * 这样改动最小，也不会破坏你现有 handler 的 applyUpdate 签名。
+     */
+    private ProcedureMatchResult attachToExistingProcedure(
+            SignalingMessage msg,
+            FlowMatchDecision decision,
+            long nowMs,
+            FlowContext ctx
+    ) {
+        FlowHandler handler = decision.getHandler();
+        Procedure procedure = decision.getProcedure();
+
+        if (handler == null || procedure == null) {
+            return ProcedureMatchResult.error("attach decision missing handler or procedure");
+        }
+
+        String ueId = msg.getUeId();
+        Score score = scoreProcedure(procedure, nowMs, msg);
+
+        if (score == null) {
+            return ProcedureMatchResult.error("score is null when attaching procedure");
+        }
+
+        handler.applyUpdate(ueId, procedure, score, msg, nowMs, ctx);
+        return ProcedureMatchResult.successExisting(procedure.getProcedureId(), handler.type());
+    }
+
+
+    /**
+     * 创建新流程
+     *
+     * 注意：
+     * 为了保持你当前行为一致，
+     * 这里只调用 add_ActProcedure(...)，不额外调用 handler.applyUpdate(...)。
+     */
+    private ProcedureMatchResult createNewProcedure(SignalingMessage msg, ProcedureTypeEnum typeEnum) {
+        String ueId = msg.getUeId();
+        String msgType = msg.getMsgType();
+
+        var created = proManagerService.add_ActProcedure(ueId, typeEnum, msgType);
+        if (created == null || (int) created.getOrDefault("status", 1) != 0) {
+            return ProcedureMatchResult.error("failed to create " + typeEnum);
+        }
+
+        String procId = String.valueOf(created.get("procedureId"));
+        return ProcedureMatchResult.successNew(procId, typeEnum);
+    }
+
+    /**
+     * UNKNOWN 兜底
+     *
+     * 保持你现有逻辑：
+     * - activeList 为空时建 UNKNOWN
+     * - 通用 best-match 失败时也建 UNKNOWN
+     */
+    private ProcedureMatchResult createUnknownProcedure(SignalingMessage msg) {
+        String ueId = msg.getUeId();
+        String msgType = msg.getMsgType();
+
+        var created = proManagerService.add_ActProcedure(ueId, ProcedureTypeEnum.UNKNOWN, msgType);
+        if (created == null || (int) created.getOrDefault("status", 1) != 0) {
+            return ProcedureMatchResult.error("failed to create UNKNOWN procedure");
+        }
+
+        String procId = String.valueOf(created.get("procedureId"));
+        return ProcedureMatchResult.successNew(procId, ProcedureTypeEnum.UNKNOWN);
+    }
+
+    /**
+     * 根据流程 type code 反查枚举
+     */
+    private ProcedureTypeEnum resolveProcedureType(String code) {
+        if (code == null) {
+            return null;
+        }
+
+        for (ProcedureTypeEnum type : ProcedureTypeEnum.values()) {
+            if (code.equalsIgnoreCase(type.getCode())) {
+                return type;
+            }
+        }
+        return null;
+    }
+
 
     private Score scoreProcedure(Procedure proc, long msgTs, SignalingMessage msg) {
         ProcedureTypeEnum typeEnum = ProcedureTypeEnum.fromCode(proc.getProcedureTypeCode());

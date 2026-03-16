@@ -7,6 +7,7 @@ import com.example.procedure.initial_acess.*;
 import com.example.procedure.parser.TsharkJsonMessageParser;
 import com.example.procedure.service.MsgProcessing_Service;
 import com.example.procedure.model.ProcedureTypeEnum;
+import com.example.procedure.service.PcapBatchProcessingService;
 import com.example.procedure.streaming.layers.ChainsInspectConsumer;
 import com.example.procedure.streaming.layers.LayersSelectiveParser;
 import com.example.procedure.util.SignalingMessagePrinter;
@@ -31,6 +32,9 @@ class MessageProcessingServiceTests {
     private MsgProcessing_Service messageProcessingService;
     @Autowired
     private UeIdBinder ueIdBinder;
+
+    @Autowired
+    private PcapBatchProcessingService pcapBatchProcessingService;
 
     // ====== 通用构造器 ======
     private SignalingMessage buildMsg(String ueId,
@@ -430,31 +434,7 @@ class MessageProcessingServiceTests {
     private TsharkRunner tsharkRunner;
 
     @Test
-    void contextLoads() throws Exception{
-        String tsharkJson =
-                """
-                [
-                  {
-                    "_index": "x",
-                    "_type": "y",
-                    "_source": {
-                      "layers": {
-                        "frame": {
-                          "frame.number": "10",
-                          "frame.time_epoch": "1700000000.123",
-                          "frame.protocols": "eth:ip:sctp:nas-5gs:nr-rrc"
-                        },
-                        "nas-5gs_raw": ["AA11"],
-                        "nas-5gs": {"nas.msg": "first"},
-                        "nas-5gs_raw": ["BB22"],
-                        "nas-5gs": {"nas.msg": "second"},
-                        "nr-rrc_raw": ["CC33"],
-                        "nr-rrc": {"rrc.msg": "hello"}
-                      }
-                    }
-                  }
-                ]
-                """;
+    void contextLoads() throws Exception {
         Path pcap = Path.of("5g_srsRAN_n78_gain40_amf.pcapng");
 
         Set<String> wanted = Set.of(
@@ -466,60 +446,45 @@ class MessageProcessingServiceTests {
                 "ngap",
                 "http2",
                 "json.object"
-
         );
 
-        // 你希望启用并严格配对抓取的 raw layer（*_raw 必须紧挨着逻辑层才会被消费）
         Set<String> enabledRaw = Set.of(
                 "nas-5gs_raw",
                 "mac-nr_raw"
         );
 
-        tsharkRunner.decodeToJsonStream(pcap, in -> {
-            try {
-                ChainsInspectConsumer consumer = new ChainsInspectConsumer(this::processOne);
-                LayersSelectiveParser.parsePackets(in, wanted, enabledRaw, consumer);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
+        // 直接走正式入口服务
+        pcapBatchProcessingService.process(pcap, wanted, enabledRaw);
     }
 
-    private void processOne(SignalingMessage msg) {
-        ueIdBinder.handle(msg, m -> {
-            MessageProcessingResult result = messageProcessingService.process(m);
-            SignalingMessagePrinter.printAndWriteToFile(
-                    m, Paths.get("logs/signaling_dump.log"), true
-            );
-        });
-    }
 
-    private void processPcap(Path pcap, Set<String> wanted, Set<String> enabledRaw) throws Exception {
-        ChainsInspectConsumer consumer = new ChainsInspectConsumer(this::processOne);
 
-        tsharkRunner.decodeToJsonStream(pcap, in -> {
-            try {
-                LayersSelectiveParser.parsePackets(in, wanted, enabledRaw, consumer);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
-    }
+
 
     @Test
     void processTwoPcaps() throws Exception {
         Path pcap1 = Path.of("gnb_capture.pcap");
         Path pcap2 = Path.of("5g_srsRAN_n78_gain40_amf.pcapng");
 
-        Set<String> wanted = Set.of("nas-5gs_raw","nas-5gs","nr-rrc",
-                "mac-nr","mac-nr_raw","ngap","http2","json.object");
-        Set<String> enabledRaw = Set.of("nas-5gs_raw","mac-nr_raw");
+        Set<String> wanted = Set.of(
+                "nas-5gs_raw",
+                "nas-5gs",
+                "nr-rrc",
+                "mac-nr",
+                "mac-nr_raw",
+                "ngap",
+                "http2",
+                "json.object"
+        );
 
-        processPcap(pcap1, wanted, enabledRaw);
-        processPcap(pcap2, wanted, enabledRaw);
+        Set<String> enabledRaw = Set.of(
+                "nas-5gs_raw",
+                "mac-nr_raw"
+        );
+
+        // 现在测试类不再自己编排处理流程，
+        // 而是调用正式的 pcap 批处理服务
+        pcapBatchProcessingService.process(pcap1, wanted, enabledRaw);
+        pcapBatchProcessingService.process(pcap2, wanted, enabledRaw);
     }
-
-
-
-
 }
