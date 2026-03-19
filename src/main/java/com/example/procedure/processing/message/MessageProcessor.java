@@ -2,225 +2,230 @@ package com.example.procedure.processing.message;
 
 import com.example.procedure.context.UeContextService;
 import com.example.procedure.decrypt.DecryptAttemptResult;
-import com.example.procedure.model.MessageCategory;
 import com.example.procedure.model.MessageProcessingResult;
-import com.example.procedure.model.ProcedureTypeEnum;
 import com.example.procedure.model.SignalingMessage;
 import com.example.procedure.model.UEContext;
-import com.example.procedure.processing.dispatch.ProcedureDispatchService;
-import com.example.procedure.processing.procedure.ProcedureRecognitionService;
-import com.example.procedure.service.PendingMessageService;
+import com.example.procedure.processing.pending.PendingDecryptQueue;
+import com.example.procedure.processing.procedure.ProcedureProcessingStage;
+import com.example.procedure.support.logging.StageLogRefs;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 /**
  * 规范化后的消息处理主入口。
  *
- * 当前阶段职责：
- * 1. 组织主处理链路
- * 2. 将分类、解密、流程识别、分发、pending 重试串起来
- * 3. 保持原有行为不变
+ * 当前定位：
+ * - 它是单条消息主处理链的编排器
+ * - 它自己不承载具体分类、解密、流程识别规则
+ * - 它负责控制各处理阶段的进入顺序、提前返回时机和最终结果收口
  *
- * 与旧 MsgProcessing_Service 的关系：
- * - 这里是新的主实现
- * - 旧类后面会退化成兼容适配层
+ * 当前主链顺序保持不变：
+ * 1. 初始化处理上下文
+ * 2. 执行分类阶段
+ * 3. 加载 UEContext
+ * 4. 执行解密阶段
+ * 5. 若未提前结束，则执行流程阶段
+ * 6. 触发 pending 解密重试
+ * 7. 构造统一处理结果
  *
- * 为什么这一步属于阶段 1：
- * - 文档要求先把主复杂度聚集点拆开
- * - 但暂时不改变系统功能和处理结果
- * - 这是“工程整形”，不是“业务重写”
+ * 当前阶段日志：
+ * - 只记录关键阶段和结果概要
+ * - 引用信息统一复用 StageLogRefs
+ *
+ * 第 27 小步的重点：
+ * - 结果日志摘要不再由 MessageProcessor 手写拼接
+ * - 改为统一委托给 MessageProcessingResultFactory
  */
 @Service
 public class MessageProcessor {
 
+    private static final Logger log = LoggerFactory.getLogger(MessageProcessor.class);
+
     private final UeContextService ueContextService;
     private final MessageClassificationService classificationService;
-    private final DecryptCoordinator decryptCoordinator;
-    private final ProcedureRecognitionService procedureRecognitionService;
-    private final ProcedureDispatchService procedureDispatchService;
+    private final MessageDecryptStage messageDecryptStage;
+    private final ProcedureProcessingStage procedureProcessingStage;
+    private final PendingDecryptQueue pendingDecryptQueue;
+    private final MessageProcessingResultFactory resultFactory;
 
-    private final PendingMessageService pendingMessageService;
-
-
-    /**
-     * 这里用 @Lazy 是为了避免循环依赖：
-     * MessageProcessor -> PendingRetryService -> MessageProcessor
-     *
-     * 在当前阶段这是可以接受的兼容式做法；
-     * 后续阶段 2/3 再改成事件发布或回调接口会更优雅。
-     */
     private final PendingRetryService pendingRetryService;
 
     public MessageProcessor(
             UeContextService ueContextService,
             MessageClassificationService classificationService,
-            DecryptCoordinator decryptCoordinator,
-            ProcedureRecognitionService procedureRecognitionService,
-            ProcedureDispatchService procedureDispatchService,
-            PendingMessageService pendingMessageService,
+            MessageDecryptStage messageDecryptStage,
+            ProcedureProcessingStage procedureProcessingStage,
+            PendingDecryptQueue pendingDecryptQueue,
+            MessageProcessingResultFactory resultFactory,
             @Lazy PendingRetryService pendingRetryService
     ) {
         this.ueContextService = ueContextService;
         this.classificationService = classificationService;
-        this.decryptCoordinator = decryptCoordinator;
-        this.procedureRecognitionService = procedureRecognitionService;
-        this.procedureDispatchService = procedureDispatchService;
-        this.pendingMessageService = pendingMessageService;
+        this.messageDecryptStage = messageDecryptStage;
+        this.procedureProcessingStage = procedureProcessingStage;
+        this.pendingDecryptQueue = pendingDecryptQueue;
+        this.resultFactory = resultFactory;
         this.pendingRetryService = pendingRetryService;
     }
 
-    /**
-     * 消息处理主入口。
-     *
-     * 处理顺序：
-     * 1. 分类
-     * 2. 读取 UEContext
-     * 3. 若消息加密，则先做解密尝试
-     * 4. 若消息属于流程相关消息，则执行流程识别
-     * 5. 执行后续分发
-     * 6. 上下文更新后，尝试重试 pending 解密消息
-     * 7. 构造统一结果返回
-     *
-     * 注意：
-     * - 当前阶段仍保留“递归处理回流后的消息”这一旧行为
-     * - 这样风险最低，便于你先把结构拆干净
-     */
-    /**
-     * 消息处理主入口。
-     *
-     * 当前阶段必须保持与原系统一致的关键行为：
-     * 1. 解密 WAITING 时入 pending 队列
-     * 2. 后续上下文更新后重试 pending
-     * 3. 重试成功后回流并重新进入主链路
-     */
     public MessageProcessingResult process(SignalingMessage msg) {
-        MessageProcessingContext context = new MessageProcessingContext(msg);
+        MessageProcessingContext context = initializeContext(msg);
 
-        // 第 1 步：消息分类
+        logMainEntry(context);
+
+        runClassificationStage(context);
+        loadUeContext(context);
+
+        MessageProcessingResult earlyResult = handleDecryptStage(context);
+        if (earlyResult != null) {
+            logMainEarlyReturn(context, earlyResult);
+            return earlyResult;
+        }
+
+        runProcedureStage(context);
+        retryPendingDecrypt(context);
+
+        MessageProcessingResult finalResult = buildResult(context);
+        logMainExit(context, finalResult);
+        return finalResult;
+    }
+
+    private MessageProcessingContext initializeContext(SignalingMessage msg) {
+        return new MessageProcessingContext(msg);
+    }
+
+    private void runClassificationStage(MessageProcessingContext context) {
         classificationService.classify(context);
 
-        // 第 2 步：读取当前 UE 上下文
-        context.setUeContext(ueContextService.getContext(msg.getUeId()));
+        log.debug("Message stage[classification] done: {}, category={}",
+                StageLogRefs.context(context),
+                context.getCategory());
+    }
 
-        // 第 3 步：若当前消息含加密层，则优先执行解密预处理
-        DecryptAttemptResult decryptResult = decryptCoordinator.handleEncryptedMessageIfNeeded(context);
-        if (decryptResult != null) {
+    private void loadUeContext(MessageProcessingContext context) {
+        SignalingMessage msg = context.getMessage();
+        UEContext ueContext = ueContextService.getContext(msg.getUeId());
+        context.setUeContext(ueContext);
 
-            // 3.1 解密成功：先执行回流，再重新递归进入主链路
-            if (decryptResult.getStatus() == DecryptAttemptResult.Status.OK) {
-                boolean reentered = decryptCoordinator.handleDecryptSuccess(context);
+        log.debug("Message stage[load-ue-context] done: {}, hasContext={}",
+                StageLogRefs.context(context),
+                context.hasUeContext());
+    }
 
-                // 与原实现保持一致：
-                // 只要回流成功，就对同一条消息重新执行主处理流程，
-                // 让分类 / 流程识别 / 分发都吃到新的明文解析结果。
-                if (reentered) {
-                    return process(msg);
-                }
+    private MessageProcessingResult handleDecryptStage(MessageProcessingContext context) {
+        DecryptAttemptResult decryptResult =
+                messageDecryptStage.handleEncryptedMessageIfNeeded(context);
 
-                return buildResult(context);
-            }
-
-            // 3.2 缺材料 / 缺 key / 缺算法：必须入 pending 队列
-            //
-            // 这是原系统的关键行为：
-            // - 当前轮无法继续解密
-            // - 先把消息缓冲起来
-            // - 等后续某条消息把 UEContext 更新完整后，再触发 retryPendingDecrypt(...)
-            if (decryptResult.getStatus() == DecryptAttemptResult.Status.WAITING) {
-                pendingMessageService.enqueue(
-                        msg.getUeId(),
-                        msg,
-                        decryptResult.getReason()
-                );
-                return buildResult(context);
-            }
-
-            // 3.3 FAILED / SKIP：与原逻辑一致，继续走后续主流程
+        if (decryptResult == null) {
+            log.debug("Message stage[decrypt] skipped-early-exit: {}, enc={}, encType={}",
+                    StageLogRefs.context(context),
+                    context.isEncrypted(),
+                    StageLogRefs.safe(context.getEncryptedType()));
+            return null;
         }
 
-        // 第 4 步：只有流程相关消息才进入流程识别
-        if (isProcedureMessage(context.getCategory())) {
-            context.setProcedureMatchResult(
-                    procedureRecognitionService.recognize(msg)
-            );
+        log.debug("Message stage[decrypt] result: {}, encType={}, status={}, reason={}, error={}",
+                StageLogRefs.context(context),
+                StageLogRefs.safe(context.getEncryptedType()),
+                decryptResult.getStatus(),
+                decryptResult.getReason(),
+                decryptResult.getError());
+
+        if (context.isDecryptOk()) {
+            return handleDecryptSuccess(context);
         }
 
-        // 第 5 步：统一分发
-        dispatchMessage(context);
+        if (context.isDecryptWaiting()) {
+            enqueuePendingDecrypt(context, decryptResult);
+            return buildResult(context);
+        }
 
-        // 第 6 步：分发后上下文可能已更新（例如拿到了新的 key / 算法）
-        // 因此这里重新读取最新上下文，再尝试重试该 UE 的 pending 解密消息
-        UEContext refreshedContext = ueContextService.getContext(msg.getUeId());
-        pendingRetryService.retryPendingDecrypt(msg.getUeId(), refreshedContext);
+        return null;
+    }
 
-        // 第 7 步：统一返回结果
+    private MessageProcessingResult handleDecryptSuccess(MessageProcessingContext context) {
+        boolean reentered = messageDecryptStage.handleDecryptSuccess(context);
+
+        log.debug("Message stage[decrypt-success] handled: {}, reentered={}",
+                StageLogRefs.context(context),
+                reentered);
+
+        if (reentered) {
+            log.info("Message main-chain reenter: {}",
+                    StageLogRefs.context(context));
+            return process(context.getMessage());
+        }
+
         return buildResult(context);
     }
 
-    /**
-     * 当前只有流程驱动类和流程辅助类消息需要进入流程识别模块。
-     */
-    private boolean isProcedureMessage(MessageCategory category) {
-        return category == MessageCategory.PROCEDURE_DRIVING
-                || category == MessageCategory.PROCEDURE_AUX;
-    }
-
-    /**
-     * 统一执行消息分发。
-     *
-     * 说明：
-     * - procedureId / procedureTypeCode 的拼装细节不应该散落在主流程里
-     * - 因此这里集中做一次转换
-     */
-    private void dispatchMessage(MessageProcessingContext context) {
-        String procedureId = null;
-        String procedureTypeCode = null;
-
-        if (context.getProcedureMatchResult() != null
-                && context.getProcedureMatchResult().getStatus() == 0) {
-
-            procedureId = context.getProcedureMatchResult().getProcedureId();
-
-            ProcedureTypeEnum procedureType = context.getProcedureMatchResult().getProcedureType();
-            if (procedureType != null) {
-                procedureTypeCode = procedureType.getCode();
-            }
-        }
-
-        procedureDispatchService.dispatch(
-                context.getMessage(),
-                context.getCategory(),
-                procedureId,
-                procedureTypeCode
-        );
-    }
-
-    /**
-     * 统一构造返回结果，保证不同分支出口的结果格式一致。
-     */
-    private MessageProcessingResult buildResult(MessageProcessingContext context) {
-        String procedureId = null;
-        String procedureTypeCode = null;
-
-        if (context.getProcedureMatchResult() != null
-                && context.getProcedureMatchResult().getStatus() == 0) {
-
-            procedureId = context.getProcedureMatchResult().getProcedureId();
-
-            ProcedureTypeEnum procedureType = context.getProcedureMatchResult().getProcedureType();
-            if (procedureType != null) {
-                procedureTypeCode = procedureType.getCode();
-            }
-        }
-
+    private void enqueuePendingDecrypt(
+            MessageProcessingContext context,
+            DecryptAttemptResult decryptResult
+    ) {
         SignalingMessage msg = context.getMessage();
 
-        return new MessageProcessingResult(
+        pendingDecryptQueue.enqueue(
                 msg.getUeId(),
-                msg.getMsgType(),
-                context.getCategory(),
-                procedureId,
-                procedureTypeCode
+                msg,
+                decryptResult.getReason()
         );
+
+        log.info("Message pending-enqueue: {}, encType={}, reason={}",
+                StageLogRefs.context(context),
+                StageLogRefs.safe(context.getEncryptedType()),
+                decryptResult.getReason());
+    }
+
+    private void runProcedureStage(MessageProcessingContext context) {
+        procedureProcessingStage.process(context);
+
+        log.debug("Message stage[procedure] done: {}, category={}, procedureId={}, procedureType={}",
+                StageLogRefs.context(context),
+                context.getCategory(),
+                context.getMatchedProcedureId(),
+                context.getMatchedProcedureTypeCode());
+    }
+
+    private void retryPendingDecrypt(MessageProcessingContext context) {
+        SignalingMessage msg = context.getMessage();
+        UEContext refreshedContext = ueContextService.getContext(msg.getUeId());
+
+        log.debug("Message stage[pending-retry] start: {}, hasRefreshedContext={}",
+                StageLogRefs.context(context),
+                refreshedContext != null);
+
+        pendingRetryService.retryPendingDecrypt(
+                msg.getUeId(),
+                refreshedContext
+        );
+
+        log.debug("Message stage[pending-retry] done: {}",
+                StageLogRefs.context(context));
+    }
+
+    private MessageProcessingResult buildResult(MessageProcessingContext context) {
+        return resultFactory.build(context);
+    }
+
+    private void logMainEntry(MessageProcessingContext context) {
+        log.debug("Message main-chain enter: {}, enc={}, encType={}",
+                StageLogRefs.context(context),
+                context.isEncrypted(),
+                StageLogRefs.safe(context.getEncryptedType()));
+    }
+
+    private void logMainEarlyReturn(MessageProcessingContext context, MessageProcessingResult result) {
+        log.debug("Message main-chain early-return: {}, {}",
+                StageLogRefs.context(context),
+                resultFactory.summary(result));
+    }
+
+    private void logMainExit(MessageProcessingContext context, MessageProcessingResult result) {
+        log.debug("Message main-chain exit: {}, {}",
+                StageLogRefs.context(context),
+                resultFactory.summary(result));
     }
 }

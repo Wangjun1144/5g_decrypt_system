@@ -2,55 +2,51 @@ package com.example.procedure.service;
 
 import com.example.procedure.decrypt.DecryptAttemptResult;
 import com.example.procedure.model.SignalingMessage;
+import com.example.procedure.processing.pending.PendingDecryptQueue;
 import com.example.procedure.processing.pending.PendingMessageRecord;
-import com.example.procedure.processing.pending.PendingMessageRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * @deprecated 阶段 1/2 过渡门面。
+ * 旧的 pending 消息兼容门面。
  *
- * 设计说明：
- * - 文档要求将等待状态抽象为 PendingMessageRepository。
- * - 为减少一次性改动范围，当前保留旧类名作为兼容门面
- * - 真正的状态存储已经下沉到 PendingMessageRepository
+ * 当前阶段保留这个类的原因：
+ * 1. 旧代码和旧测试可能仍依赖它
+ * 2. 为了避免一次性大面积修改，保留兼容入口
+ * 3. 真正的新边界已经转移到 PendingDecryptQueue
  *
- * 后续建议：
- * - 新代码优先直接依赖 PendingMessageRepository 或 processing.pending 包中的新服务
- * - 旧代码短期内仍可继续依赖 PendingMessageService
+ * 新代码使用建议：
+ * - 不要继续优先依赖这个类
+ * - 优先依赖 processing.pending 包下的新接口 PendingDecryptQueue
+ *
+ * 这一步之后，这个类的角色会更加明确：
+ * - 它只是旧接口适配层
+ * - 不再是推荐使用的 pending 队列入口
  */
 @Deprecated
 @Service
 public class PendingMessageService {
 
-    private final PendingMessageRepository repository;
+    private final PendingDecryptQueue queue;
 
-    public PendingMessageService(PendingMessageRepository repository) {
-        this.repository = repository;
+    public PendingMessageService(PendingDecryptQueue queue) {
+        this.queue = queue;
     }
 
     /**
      * 兼容旧接口：将一条消息放入 pending 队列。
      */
     public void enqueue(String ueId, SignalingMessage msg, DecryptAttemptResult.WaitReason reason) {
-        repository.enqueue(
-                ueId,
-                new PendingItem(
-                        System.currentTimeMillis(),
-                        safeMsgId(msg),
-                        reason,
-                        msg
-                ).toRecord()
-        );
+        queue.enqueue(ueId, msg, reason);
     }
 
     /**
      * 兼容旧接口：批量拉取待处理消息。
      */
     public List<PendingItem> pollBatch(String ueId, int max) {
-        return repository.pollBatch(ueId, max)
+        return queue.pollBatch(ueId, max)
                 .stream()
                 .map(PendingItem::fromRecord)
                 .collect(Collectors.toList());
@@ -60,27 +56,18 @@ public class PendingMessageService {
      * 兼容旧接口：重新入队。
      */
     public void requeue(String ueId, PendingItem item) {
-        repository.requeue(ueId, item.toRecord());
+        queue.requeue(ueId, item.toRecord());
     }
 
     public int size(String ueId) {
-        return repository.size(ueId);
-    }
-
-    private String safeMsgId(SignalingMessage msg) {
-        try {
-            return msg.getMsgId();
-        } catch (Exception e) {
-            return "UNKNOWN_MSG";
-        }
+        return queue.size(ueId);
     }
 
     /**
      * 旧版兼容对象。
      *
-     * 说明：
-     * - 之所以暂时保留，是为了不让你前面已经改过的 PendingRetryService 再被迫一次性重写
-     * - 后续可以逐步替换为 PendingMessageRecord
+     * 当前仍保留它，是为了不让已接入旧接口的代码一次性全部改掉。
+     * 后续可以逐步统一迁移到 PendingMessageRecord。
      */
     public static class PendingItem {
         public final long enqueueAt;

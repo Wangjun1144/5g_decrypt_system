@@ -2,11 +2,14 @@ package com.example.scene.decodersystem;
 
 
 import com.example.procedure.Application;
+import com.example.procedure.support.logging.SignalingDumpWriter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+
+import java.nio.file.Paths;
 
 @SpringBootTest(classes = Application.class)
 public class RedisConnectionTest {
@@ -43,6 +46,8 @@ public class RedisConnectionTest {
         try {
             connection.serverCommands().flushAll();
             System.out.println("✅ 已执行 FLUSHALL，清空所有 Redis 数据库");
+            SignalingDumpWriter.deleteLogDirectory(Paths.get("logs"));
+            System.out.println("✅ 已删除 logs 日志目录");
         } finally {
             connection.close();
         }
