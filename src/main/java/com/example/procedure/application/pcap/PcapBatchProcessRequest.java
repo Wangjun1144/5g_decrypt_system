@@ -1,0 +1,4 @@
+package com.example.procedure.application.pcap;
+
+public class PcapBatchProcessRequest {
+}
