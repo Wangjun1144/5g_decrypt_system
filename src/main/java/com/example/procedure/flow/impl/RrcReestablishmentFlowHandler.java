@@ -102,7 +102,7 @@ public class RrcReestablishmentFlowHandler implements FlowHandler {
                 score.getOrderIndex()
         );
 
-        ctx.proManagerService().update_ActProcedureEx(
+        ctx.procedureStateService().updateProcedureEx(
                 ueId,
                 proc.getProcedureId(),
                 msgType,
@@ -113,8 +113,10 @@ public class RrcReestablishmentFlowHandler implements FlowHandler {
                 proc.getKeyMask()
         );
 
+
         if (ctx.closeDecider().isReadyToClose(proc, nowMs)) {
-            ctx.proManagerService().end_Procedure(ueId, proc.getProcedureId());
+            ctx.procedureStateService().endProcedure(ueId, proc.getProcedureId());
+
         }
     }
 }

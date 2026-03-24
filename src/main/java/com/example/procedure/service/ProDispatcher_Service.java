@@ -2,43 +2,38 @@ package com.example.procedure.service;
 
 import com.example.procedure.model.MessageCategory;
 import com.example.procedure.model.SignalingMessage;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * DEMO 版流程调度器：
- * 根据流程类型/消息类别，后续可以扩展调用解密、解析、上下文更新等。
- * 现在先只打印日志，方便你验证整体链路。
+ * @deprecated 旧的流程分发兼容层。
+ *
+ * 当前阶段保留这个类的原因：
+ * - 旧代码或旧测试可能仍然依赖 ProDispatcher_Service
+ * - 新主链已经迁移到 processing.dispatch.ProcedureDispatchService
+ * - 为避免一次性修改所有旧调用方，这里保留旧类名作为兼容门面
+ *
+ * 后续建议：
+ * - 新代码只依赖 com.example.procedure.processing.dispatch.ProcedureDispatchService
+ * - 本类最终可迁入 legacy 包或删除
  */
 @Deprecated
 @Service
 public class ProDispatcher_Service {
-    private static final Logger log = LoggerFactory.getLogger(ProDispatcher_Service.class);
-    private final UEContextService ueContextService;
 
-    public ProDispatcher_Service(UEContextService ueContextService){
-        this.ueContextService = ueContextService;
+    private final com.example.procedure.processing.dispatch.ProcedureDispatchService delegate;
+
+    public ProDispatcher_Service(
+            com.example.procedure.processing.dispatch.ProcedureDispatchService delegate
+    ) {
+        this.delegate = delegate;
     }
 
-    public void dispatch(SignalingMessage msg,
-                         MessageCategory category,
-                         String procedureId,
-                         String procedureType){
-        // DEMO：目前先只打一个日志，确认调度信息是否正确
-        log.info("Dispatch msg. ueId={}, msgType={}, category={}, procedureType={}, procedureId={}",
-                msg.getUeId(), msg.getMsgType(), category, procedureType, procedureId);
-
-        // 对 IA 流程驱动信令，更新 UE 上下文。
-        // 具体字段提取/索引写入/密钥补偿推导等逻辑，已下沉到 UeContextUpdater 体系中。
-        if ("IA".equalsIgnoreCase(procedureType) && category == MessageCategory.PROCEDURE_DRIVING) {
-            ueContextService.updateOnInitialAccess(msg, procedureId);
-        }
-
-        // TODO：后续扩展点举例：
-        // 1. 所有消息：统一原始入库 / 写 Kafka / 写文件
-        // 2. 根据流程类型做特定处理：
-        //    if ("Initial Access".equals(procedureType) || "IA".equals(procedureTypeCode)) { ... }
-        // 3. 驱动 UE 上下文更新、密钥管理、解密、协议解析等
+    public void dispatch(
+            SignalingMessage msg,
+            MessageCategory category,
+            String procedureId,
+            String procedureType
+    ) {
+        delegate.dispatch(msg, category, procedureId, procedureType);
     }
 }

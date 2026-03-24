@@ -101,8 +101,7 @@ public class InitialAccessFlowHandler implements FlowHandler {
         // 3) 单调推进
         ProcedureProgressUtil.advanceMonotonic(proc, score.getPhaseIndex(), score.getOrderIndex());
 
-        // 4) 持久化
-        ctx.proManagerService().update_ActProcedureEx(
+        ctx.procedureStateService().updateProcedureEx(
                 ueId,
                 proc.getProcedureId(),
                 msgType,
@@ -113,9 +112,10 @@ public class InitialAccessFlowHandler implements FlowHandler {
                 proc.getKeyMask()
         );
 
+
         // 5) close
         if (ctx.closeDecider().isReadyToClose(proc, nowMs)) {
-            ctx.proManagerService().end_Procedure(ueId, proc.getProcedureId());
+            ctx.procedureStateService().endProcedure(ueId, proc.getProcedureId());
         }
     }
 

@@ -4,6 +4,8 @@ import com.example.procedure.application.ApplicationStageErrors;
 import com.example.procedure.application.ApplicationStageException;
 import com.example.procedure.domain.binding.UeBindingService;
 import com.example.procedure.model.SignalingMessage;
+import com.example.procedure.processing.binding.BindingProcessRequest;
+import com.example.procedure.processing.message.MessageProcessRequest;
 import com.example.procedure.processing.message.MessageProcessor;
 import com.example.procedure.support.logging.SignalingDumpWriter;
 import com.example.procedure.support.logging.StageLogRefs;
@@ -18,33 +20,39 @@ import java.nio.file.Paths;
  * 单条消息主处理链的默认实现。
  *
  * 当前定位：
- * - 它是 application 层里“单条消息统一入口”的默认实现
- * - 它负责把一条已经解析完成的 SignalingMessage
- *   组织进入绑定阶段，再进入主处理阶段
- *
- * 当前处理顺序保持不变：
- * 1. 进入绑定阶段
- * 2. 绑定阶段若释放历史 pending，则先处理 released 消息
- * 3. 当前消息在绑定完成后进入主消息处理器
- * 4. 保留当前阶段调试输出
- *
- * 当前阶段日志：
- * - 已与 MessageProcessor 和 PcapBatchOrchestrator 对齐
- * - 引用信息统一复用 StageLogRefs
- *
- * 第 26 小步的重点：
- * - 把重复的 application 阶段异常构造逻辑统一改为使用 ApplicationStageErrors
+ * 1. 它是 application 层“单条消息统一入口”的默认实现
+ * 2. 它负责把一条消息组织进入 binding 阶段，再进入主处理阶段
+ * 3. 当前仍保持同步单体执行方式不变
  */
 @Service
 public class DefaultSignalingMessagePipeline implements SignalingMessagePipeline {
 
+    /**
+     * 日志器。
+     */
     private static final Logger log = LoggerFactory.getLogger(DefaultSignalingMessagePipeline.class);
 
+    /**
+     * 当前调试输出路径。
+     */
     private static final Path SIGNALING_DUMP_PATH = Paths.get("logs/signaling_dump.log");
 
+    /**
+     * UE 绑定服务。
+     */
     private final UeBindingService ueBindingService;
+
+    /**
+     * 消息主处理器。
+     */
     private final MessageProcessor messageProcessor;
 
+    /**
+     * 构造默认 pipeline 实现。
+     *
+     * @param ueBindingService UE 绑定服务
+     * @param messageProcessor 消息主处理器
+     */
     public DefaultSignalingMessagePipeline(
             UeBindingService ueBindingService,
             MessageProcessor messageProcessor
@@ -53,13 +61,20 @@ public class DefaultSignalingMessagePipeline implements SignalingMessagePipeline
         this.messageProcessor = messageProcessor;
     }
 
+    /**
+     * 正式入口：处理一条 pipeline 请求。
+     *
+     * @param request pipeline 请求对象
+     */
     @Override
-    public void process(SignalingMessage msg) {
-        logPipelineEntry(msg);
+    public void process(SignalingMessagePipelineRequest request) {
+        SignalingMessage msg = request.getMessage();
+
+        logPipelineEntry(msg, request);
 
         try {
-            enterPipeline(msg);
-            logPipelineExit(msg);
+            enterPipeline(request);
+            logPipelineExit(msg, request);
         } catch (ApplicationStageException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -72,19 +87,44 @@ public class DefaultSignalingMessagePipeline implements SignalingMessagePipeline
         }
     }
 
-    private void enterPipeline(SignalingMessage msg) {
-        enterBindingStage(msg);
+    /**
+     * 进入 pipeline 主体。
+     *
+     * 当前阶段这一步只负责进入 binding。
+     *
+     * @param request pipeline 请求对象
+     */
+    private void enterPipeline(SignalingMessagePipelineRequest request) {
+        enterBindingStage(request);
     }
 
-    private void enterBindingStage(SignalingMessage msg) {
-        log.debug("Pipeline stage[binding] enter: {}",
-                StageLogRefs.message(msg));
+    /**
+     * 进入 binding 阶段。
+     *
+     * 当前会把 pipeline 元数据透传给 binding 层，
+     * 这样 binding 阶段也具备正式 request 语义和事件发布能力。
+     *
+     * @param request pipeline 请求对象
+     */
+    private void enterBindingStage(SignalingMessagePipelineRequest request) {
+        SignalingMessage msg = request.getMessage();
+
+        log.debug("Pipeline stage[binding] enter: {}, sourceType={}, sourceName={}, correlationId={}, reentry={}",
+                StageLogRefs.message(msg),
+                request.getSourceType(),
+                StageLogRefs.safe(request.getSourceName()),
+                request.getCorrelationId(),
+                request.isReentry());
 
         try {
-            ueBindingService.handle(msg, this::enterMainProcessingStage);
+            ueBindingService.handle(
+                    BindingProcessRequest.fromPipelineRequest(request),
+                    boundMsg -> enterMainProcessingStage(request, boundMsg)
+            );
 
-            log.debug("Pipeline stage[binding] exit: {}",
-                    StageLogRefs.message(msg));
+            log.debug("Pipeline stage[binding] exit: {}, correlationId={}",
+                    StageLogRefs.message(msg),
+                    request.getCorrelationId());
         } catch (ApplicationStageException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -97,20 +137,50 @@ public class DefaultSignalingMessagePipeline implements SignalingMessagePipeline
         }
     }
 
-    private void enterMainProcessingStage(SignalingMessage boundMsg) {
-        processMessage(boundMsg);
+    /**
+     * binding 完成后进入主处理阶段。
+     *
+     * @param pipelineRequest pipeline 请求对象
+     * @param boundMsg 已完成 binding 的消息
+     */
+    private void enterMainProcessingStage(
+            SignalingMessagePipelineRequest pipelineRequest,
+            SignalingMessage boundMsg
+    ) {
+        processMessage(pipelineRequest, boundMsg);
         afterMessageProcessed(boundMsg);
     }
 
-    private void processMessage(SignalingMessage msg) {
-        log.debug("Pipeline stage[main-processing] enter: {}",
-                StageLogRefs.message(msg));
+    /**
+     * 调用消息主处理器。
+     *
+     * @param pipelineRequest pipeline 请求对象
+     * @param msg 当前消息
+     */
+    private void processMessage(
+            SignalingMessagePipelineRequest pipelineRequest,
+            SignalingMessage msg
+    ) {
+        log.debug("Pipeline stage[main-processing] enter: {}, correlationId={}, sourceType={}, reentry={}",
+                StageLogRefs.message(msg),
+                pipelineRequest.getCorrelationId(),
+                pipelineRequest.getSourceType(),
+                pipelineRequest.isReentry());
 
         try {
-            messageProcessor.process(msg);
+            MessageProcessRequest processRequest = new MessageProcessRequest(
+                    msg,
+                    pipelineRequest.getSourceType(),
+                    pipelineRequest.getSourceName(),
+                    pipelineRequest.getCorrelationId(),
+                    pipelineRequest.isReentry()
+            );
 
-            log.debug("Pipeline stage[main-processing] exit: {}",
-                    StageLogRefs.message(msg));
+            messageProcessor.process(processRequest);
+
+            log.debug("Pipeline stage[main-processing] exit: {}, correlationId={}",
+                    StageLogRefs.message(msg),
+                    pipelineRequest.getCorrelationId());
         } catch (ApplicationStageException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -123,10 +193,22 @@ public class DefaultSignalingMessagePipeline implements SignalingMessagePipeline
         }
     }
 
+    /**
+     * 主处理完成后的收尾动作。
+     *
+     * 当前只保留调试输出。
+     *
+     * @param msg 当前消息
+     */
     private void afterMessageProcessed(SignalingMessage msg) {
         writeDebugDump(msg);
     }
 
+    /**
+     * 写出当前调试 dump。
+     *
+     * @param msg 当前消息
+     */
     private void writeDebugDump(SignalingMessage msg) {
         log.debug("Pipeline stage[debug-dump] enter: {}, output={}",
                 StageLogRefs.message(msg),
@@ -148,11 +230,30 @@ public class DefaultSignalingMessagePipeline implements SignalingMessagePipeline
         }
     }
 
-    private void logPipelineEntry(SignalingMessage msg) {
-        log.debug("Pipeline enter: {}", StageLogRefs.message(msg));
+    /**
+     * 记录 pipeline 入口日志。
+     *
+     * @param msg 当前消息
+     * @param request pipeline 请求对象
+     */
+    private void logPipelineEntry(SignalingMessage msg, SignalingMessagePipelineRequest request) {
+        log.debug("Pipeline enter: {}, sourceType={}, sourceName={}, correlationId={}, reentry={}",
+                StageLogRefs.message(msg),
+                request.getSourceType(),
+                StageLogRefs.safe(request.getSourceName()),
+                request.getCorrelationId(),
+                request.isReentry());
     }
 
-    private void logPipelineExit(SignalingMessage msg) {
-        log.debug("Pipeline exit: {}", StageLogRefs.message(msg));
+    /**
+     * 记录 pipeline 出口日志。
+     *
+     * @param msg 当前消息
+     * @param request pipeline 请求对象
+     */
+    private void logPipelineExit(SignalingMessage msg, SignalingMessagePipelineRequest request) {
+        log.debug("Pipeline exit: {}, correlationId={}",
+                StageLogRefs.message(msg),
+                request.getCorrelationId());
     }
 }

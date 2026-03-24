@@ -1,9 +1,8 @@
 package com.example.procedure.rule;
 
-
-import com.example.procedure.initial_acess.NausfUeAuthRespPayload;
-import com.example.procedure.initial_acess.RrcSetupCompletePayload;
-import com.example.procedure.initial_acess.NgapInitialUeMessagePayload;
+import com.example.procedure.initial_access.NausfUeAuthRespPayload;
+import com.example.procedure.initial_access.NgapInitialUeMessagePayload;
+import com.example.procedure.initial_access.RrcSetupCompletePayload;
 import com.example.procedure.model.SignalingMessage;
 
 import java.util.ArrayList;
@@ -11,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 
 import static com.example.procedure.rule.PhaseDef.PhaseLocation;
+
 
 /**
  * 初始接入 / 初始注册 + 5G-AKA 的阶段配置

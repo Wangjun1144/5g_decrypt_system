@@ -10,21 +10,15 @@ import com.example.procedure.model.SignalingMessage;
  * 2. 让 pcap 批处理、未来流式消息、测试入口都可以复用同一条主链
  * 3. 为后续向流式处理、事件驱动、分布式微服务演进建立稳定入口边界
  *
- * 当前阶段的职责边界：
- * - 输入是一条已经解析完成的 SignalingMessage
- * - 先进入绑定阶段
- * - 再进入主消息处理阶段
- * - 最后保留当前阶段所需的调试输出
- *
- * 当前阶段不负责：
- * - 不负责 pcap/tshark 解析
- * - 不负责消息格式转换
- * - 不负责上游消息来源管理
- *
- * 也就是说：
- * 这个接口只关心“一条消息进入主链之后怎么跑”。
+ * 当前阶段职责边界：
+ * - 正式入口为 SignalingMessagePipelineRequest
+ * - 兼容旧调用方式时，仍允许直接传入 SignalingMessage
  */
 public interface SignalingMessagePipeline {
 
-    void process(SignalingMessage msg);
+    void process(SignalingMessagePipelineRequest request);
+
+    default void process(SignalingMessage msg) {
+        process(SignalingMessagePipelineRequest.of(msg));
+    }
 }

@@ -1,6 +1,7 @@
 package com.example.scene.decodersystem;
 
 import com.example.procedure.Application;
+import com.example.procedure.application.pcap.PcapBatchProcessor;
 import com.example.procedure.model.*;
 import com.example.procedure.rule.UeIdBinder;
 import com.example.procedure.initial_acess.*;
@@ -24,6 +25,9 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
+import com.example.procedure.application.pcap.PcapBatchProcessRequest;
+import com.example.procedure.application.pcap.PcapBatchProcessor;
+
 
 @SpringBootTest(classes = Application.class)
 class MessageProcessingServiceTests {
@@ -34,7 +38,8 @@ class MessageProcessingServiceTests {
     private UeIdBinder ueIdBinder;
 
     @Autowired
-    private PcapBatchProcessingService pcapBatchProcessingService;
+    private PcapBatchProcessor pcapBatchProcessor;
+
 
     // ====== 通用构造器 ======
     private SignalingMessage buildMsg(String ueId,
@@ -454,7 +459,9 @@ class MessageProcessingServiceTests {
         );
 
         // 直接走正式入口服务
-        pcapBatchProcessingService.process(pcap, wanted, enabledRaw);
+        PcapBatchProcessRequest request1 =
+                PcapBatchProcessRequest.of(pcap, wanted, enabledRaw);
+        pcapBatchProcessor.process(request1);
     }
 
 
@@ -482,9 +489,13 @@ class MessageProcessingServiceTests {
                 "mac-nr_raw"
         );
 
-        // 现在测试类不再自己编排处理流程，
-        // 而是调用正式的 pcap 批处理服务
-        pcapBatchProcessingService.process(pcap1, wanted, enabledRaw);
-        pcapBatchProcessingService.process(pcap2, wanted, enabledRaw);
+        PcapBatchProcessRequest request1 =
+                PcapBatchProcessRequest.of(pcap1, wanted, enabledRaw);
+        PcapBatchProcessRequest request2 =
+                PcapBatchProcessRequest.of(pcap2, wanted, enabledRaw);
+
+        pcapBatchProcessor.process(request1);
+        pcapBatchProcessor.process(request2);
     }
+
 }

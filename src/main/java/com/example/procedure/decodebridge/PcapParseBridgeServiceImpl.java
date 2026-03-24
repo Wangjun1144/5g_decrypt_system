@@ -1,45 +1,44 @@
 package com.example.procedure.decodebridge;
 
-import com.example.procedure.model.SignalingMessage;
-import com.example.procedure.streaming.layers.ChainsInspectConsumer;
-import com.example.procedure.streaming.layers.LayersSelectiveParser;
-import com.example.procedure.wireshark.TsharkRunner;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.Objects;
-import java.util.Set;
-import java.util.function.Consumer;
-
+/**
+ * pcap 解析 bridge 默认实现。
+ *
+ * 当前阶段定位：
+ * 1. 它是上层访问 pcap 解码能力的 bridge 实现
+ * 2. 它内部不再直接依赖 tshark 细节
+ * 3. 它只负责把正式请求转发给 PcapDecodeGateway
+ */
 @Service
 public class PcapParseBridgeServiceImpl implements PcapParseBridgeService {
 
-    private final TsharkRunner tsharkRunner;
+    /**
+     * pcap 解码正式网关。
+     */
+    private final PcapDecodeGateway pcapDecodeGateway;
 
-    public PcapParseBridgeServiceImpl(TsharkRunner tsharkRunner) {
-        this.tsharkRunner = tsharkRunner;
+    /**
+     * 构造 pcap bridge 默认实现。
+     *
+     * @param pcapDecodeGateway pcap 解码网关
+     */
+    public PcapParseBridgeServiceImpl(PcapDecodeGateway pcapDecodeGateway) {
+        this.pcapDecodeGateway = pcapDecodeGateway;
     }
 
+    /**
+     * 正式入口：处理一个 pcap 解码请求。
+     *
+     * 当前职责很单纯：
+     * 1. 作为 bridge 层入口
+     * 2. 把请求转发给正式 gateway
+     *
+     * @param request pcap 解码请求
+     * @throws Exception 解码失败时抛出异常
+     */
     @Override
-    public void parsePcap(Path pcap,
-                          Set<String> wanted,
-                          Set<String> enabledRaw,
-                          Consumer<SignalingMessage> messageConsumer) throws Exception {
-
-        Objects.requireNonNull(pcap, "pcap must not be null");
-        Objects.requireNonNull(wanted, "wanted must not be null");
-        Objects.requireNonNull(enabledRaw, "enabledRaw must not be null");
-        Objects.requireNonNull(messageConsumer, "messageConsumer must not be null");
-
-        ChainsInspectConsumer consumer = new ChainsInspectConsumer(messageConsumer);
-
-        tsharkRunner.decodeToJsonStream(pcap, in -> {
-            try {
-                LayersSelectiveParser.parsePackets(in, wanted, enabledRaw, consumer);
-            } catch (IOException e) {
-                throw new RuntimeException("Failed to parse tshark json stream for pcap: " + pcap, e);
-            }
-        });
+    public void parse(PcapDecodeRequest request) throws Exception {
+        pcapDecodeGateway.decode(request);
     }
 }

@@ -1,87 +1,44 @@
 package com.example.procedure.service;
 
-import com.example.procedure.context.UeContextRepository;
-import com.example.procedure.context.UeContextUpdateDispatcher;
-import com.example.procedure.context.UeContextUpdateSupport;
 import com.example.procedure.model.SignalingMessage;
 import com.example.procedure.model.UEContext;
 import org.springframework.stereotype.Service;
 
 /**
- * UE 上下文服务。
+ * @deprecated 旧的 UE 上下文服务兼容层。
  *
- * 当前阶段职责：
- * 1. 加载 UEContext
- * 2. 创建默认上下文
- * 3. 调度 updater 体系执行上下文更新
- * 4. 落库存储
+ * 当前阶段保留这个类的原因：
+ * - 旧代码和旧测试可能仍然依赖 service.UEContextService
+ * - 新主链已经统一迁移到 context.UeContextService
+ * - 为避免一次性修改过多调用方，这里保留旧类名作为门面
  *
- * 设计说明：
- * - Redis 细节已下沉到 UeContextRepository
- * - 本类保留“业务级上下文管理”职责
- * - 这与文档中“收口 UEContextService 边界”的目标一致。
+ * 后续建议：
+ * - 新代码只依赖 com.example.procedure.context.UeContextService
+ * - 本类最终可迁入 legacy 包或删除
  */
+@Deprecated
 @Service
 public class UEContextService {
 
-    private final UeContextRepository ueContextRepository;
-    private final UeContextUpdateDispatcher updateDispatcher;
-    private final UeContextUpdateSupport updateSupport;
+    private final com.example.procedure.context.UeContextService delegate;
 
-    public UEContextService(
-            UeContextRepository ueContextRepository,
-            UeContextUpdateDispatcher updateDispatcher,
-            UeContextUpdateSupport updateSupport
-    ) {
-        this.ueContextRepository = ueContextRepository;
-        this.updateDispatcher = updateDispatcher;
-        this.updateSupport = updateSupport;
+    public UEContextService(com.example.procedure.context.UeContextService delegate) {
+        this.delegate = delegate;
     }
 
-    /**
-     * 加载某个 UE 的上下文。
-     */
     public UEContext getContext(String ueId) {
-        return ueContextRepository.findByUeId(ueId);
+        return delegate.getContext(ueId);
     }
 
-    /**
-     * 保存上下文。
-     */
-    public void saveContext(UEContext ctx) {
-        ueContextRepository.save(ctx);
-    }
-
-    /**
-     * 若不存在则创建默认上下文。
-     */
-    public UEContext getOrCreate(String ueId) {
-        UEContext ctx = getContext(ueId);
-        if (ctx == null) {
-            ctx = new UEContext();
-            ctx.setUeId(ueId);
-            ctx.setAttachState("INIT");
-        }
-        return ctx;
-    }
-
-    /**
-     * 根据当前消息和流程标识，更新 UE 上下文。
-     *
-     * 说明：
-     * - 具体“每类消息如何更新上下文”的规则仍由 updater 体系负责
-     * - 本类只负责加载、调度、保存
-     */
     public void updateOnInitialAccess(SignalingMessage msg, String procedureId) {
-        String ueId = msg.getUeId();
-        if (ueId == null || ueId.isEmpty()) {
-            return;
-        }
+        delegate.updateOnInitialAccess(msg, procedureId);
+    }
 
-        UEContext ctx = getOrCreate(ueId);
+    public void saveContext(UEContext context) {
+        delegate.saveContext(context);
+    }
 
-        updateDispatcher.dispatch(msg, ctx, procedureId, updateSupport);
-
-        saveContext(ctx);
+    public UEContext getOrCreate(String ueId) {
+        return delegate.getOrCreate(ueId);
     }
 }

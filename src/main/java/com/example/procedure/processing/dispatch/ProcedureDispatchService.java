@@ -1,8 +1,11 @@
 package com.example.procedure.processing.dispatch;
 
+import com.example.procedure.context.UeContextService;
 import com.example.procedure.model.MessageCategory;
 import com.example.procedure.model.SignalingMessage;
-import com.example.procedure.service.ProDispatcher_Service;
+import com.example.procedure.processing.message.MessageProcessingContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -10,33 +13,126 @@ import org.springframework.stereotype.Service;
  *
  * 当前阶段定位：
  * - 这是“流程处理阶段”中的分发组件
- * - 它负责把流程相关分发动作委托给现有实现
- * - 这一层当前主要承担稳定边界和统一命名职责
- *
- * 为什么这层先保留：
- * - 当前项目仍在渐进重构
- * - 旧分发逻辑还没有完全迁移出来
- * - 直接改写风险较高，不适合小步推进
- *
- * 后续演进方向：
- * - 可以继续把分发策略逐步迁到 processing/dispatch 内部
- * - 也可以在未来对接消息总线、事件发布器或分布式下游服务
+ * - 负责承接流程识别后的统一分发动作
+ * - 当前先保留旧系统已有行为，不引入新的业务分支
+ * - 同时为后续事件驱动演进收口内部事件发布边界
  */
 @Service
 public class ProcedureDispatchService {
 
-    private final ProDispatcher_Service delegate;
+    private static final Logger log = LoggerFactory.getLogger(ProcedureDispatchService.class);
 
-    public ProcedureDispatchService(ProDispatcher_Service delegate) {
-        this.delegate = delegate;
+    private final UeContextService ueContextService;
+    private final ProcedureDispatchEventPublisher eventPublisher;
+
+    public ProcedureDispatchService(
+            UeContextService ueContextService,
+            ProcedureDispatchEventPublisher eventPublisher
+    ) {
+        this.ueContextService = ueContextService;
+        this.eventPublisher = eventPublisher;
     }
 
+    /**
+     * 新的正式入口：直接接收主链上下文。
+     *
+     * 这样做的好处：
+     * - 分发阶段可以直接访问来源元数据、流程匹配结果、消息本体
+     * - 为后续事件发布、审计、异步分发打基础
+     */
+    public void dispatch(MessageProcessingContext context) {
+        SignalingMessage msg = context.getMessage();
+        MessageCategory category = context.getCategory();
+        String procedureId = context.getMatchedProcedureId();
+        String procedureTypeCode = context.getMatchedProcedureTypeCode();
+
+        log.info(
+                "Dispatch msg. ueId={}, msgType={}, category={}, procedureType={}, procedureId={}, sourceType={}, sourceName={}, correlationId={}, reentry={}",
+                msg.getUeId(),
+                msg.getMsgType(),
+                category,
+                procedureTypeCode,
+                procedureId,
+                context.getSourceType(),
+                context.getSourceName(),
+                context.getCorrelationId(),
+                context.isReentry()
+        );
+
+        if (shouldUpdateInitialAccessContext(category, procedureTypeCode)) {
+            ueContextService.updateOnInitialAccess(msg, procedureId);
+        }
+
+        publishDispatchEvent(context);
+    }
+
+    /**
+     * 兼容旧调用方式，避免一次性修改过多调用方。
+     */
     public void dispatch(
             SignalingMessage msg,
             MessageCategory category,
             String procedureId,
             String procedureTypeCode
     ) {
-        delegate.dispatch(msg, category, procedureId, procedureTypeCode);
+        log.info(
+                "Dispatch msg. ueId={}, msgType={}, category={}, procedureType={}, procedureId={}",
+                msg.getUeId(),
+                msg.getMsgType(),
+                category,
+                procedureTypeCode,
+                procedureId
+        );
+
+        if (shouldUpdateInitialAccessContext(category, procedureTypeCode)) {
+            ueContextService.updateOnInitialAccess(msg, procedureId);
+        }
+
+        ProcedureDispatchedEvent event = new ProcedureDispatchedEvent(
+                null,
+                msg.getUeId(),
+                procedureId,
+                procedureTypeCode,
+                category,
+                null,
+                null,
+                false,
+                msg.getMsgId(),
+                msg.getMsgType(),
+                msg.getFrameNo(),
+                msg.getTimestamp(),
+                "procedure-dispatch"
+        );
+        eventPublisher.publish(event);
+    }
+
+    private void publishDispatchEvent(MessageProcessingContext context) {
+        SignalingMessage msg = context.getMessage();
+
+        ProcedureDispatchedEvent event = new ProcedureDispatchedEvent(
+                context.getCorrelationId(),
+                msg.getUeId(),
+                context.getMatchedProcedureId(),
+                context.getMatchedProcedureTypeCode(),
+                context.getCategory(),
+                context.getSourceType(),
+                context.getSourceName(),
+                context.isReentry(),
+                msg.getMsgId(),
+                msg.getMsgType(),
+                msg.getFrameNo(),
+                msg.getTimestamp(),
+                "procedure-dispatch"
+        );
+
+        eventPublisher.publish(event);
+    }
+
+    private boolean shouldUpdateInitialAccessContext(
+            MessageCategory category,
+            String procedureTypeCode
+    ) {
+        return category == MessageCategory.PROCEDURE_DRIVING
+                && "IA".equalsIgnoreCase(procedureTypeCode);
     }
 }

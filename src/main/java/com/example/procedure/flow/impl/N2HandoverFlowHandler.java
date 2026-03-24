@@ -85,7 +85,7 @@ public class N2HandoverFlowHandler implements FlowHandler {
 
         ProcedureProgressUtil.advanceMonotonic(proc, score.getPhaseIndex(), score.getOrderIndex());
 
-        ctx.proManagerService().update_ActProcedureEx(
+        ctx.procedureStateService().updateProcedureEx(
                 ueId,
                 proc.getProcedureId(),
                 msgType,
@@ -96,8 +96,10 @@ public class N2HandoverFlowHandler implements FlowHandler {
                 proc.getKeyMask()
         );
 
+
         if (ctx.closeDecider().isReadyToClose(proc, nowMs)) {
-            ctx.proManagerService().end_Procedure(ueId, proc.getProcedureId());
+            ctx.procedureStateService().endProcedure(ueId, proc.getProcedureId());
+
         }
     }
 

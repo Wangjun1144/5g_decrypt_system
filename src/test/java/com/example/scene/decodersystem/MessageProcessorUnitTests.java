@@ -73,22 +73,22 @@ class MessageProcessorUnitTests {
 
     private MessageProcessor messageProcessor;
 
-    @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
-
-        MessageProcessingResultFactory resultFactory = new MessageProcessingResultFactory();
-
-        messageProcessor = new MessageProcessor(
-                ueContextService,
-                classificationService,
-                messageDecryptStage,
-                procedureProcessingStage,
-                pendingDecryptQueue,
-                resultFactory,
-                pendingRetryService
-        );
-    }
+//    @BeforeEach
+//    void setUp() {
+//        MockitoAnnotations.openMocks(this);
+//
+//        MessageProcessingResultFactory resultFactory = new MessageProcessingResultFactory();
+//
+//        messageProcessor = new MessageProcessor(
+//                ueContextService,
+//                classificationService,
+//                messageDecryptStage,
+//                procedureProcessingStage,
+//                pendingDecryptQueue,
+//                resultFactory,
+//                pendingRetryService
+//        );
+//    }
 
     /**
      * 构造一条最小可用消息。

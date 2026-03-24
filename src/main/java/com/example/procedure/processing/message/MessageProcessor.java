@@ -18,25 +18,8 @@ import org.springframework.stereotype.Service;
  *
  * 当前定位：
  * - 它是单条消息主处理链的编排器
- * - 它自己不承载具体分类、解密、流程识别规则
- * - 它负责控制各处理阶段的进入顺序、提前返回时机和最终结果收口
- *
- * 当前主链顺序保持不变：
- * 1. 初始化处理上下文
- * 2. 执行分类阶段
- * 3. 加载 UEContext
- * 4. 执行解密阶段
- * 5. 若未提前结束，则执行流程阶段
- * 6. 触发 pending 解密重试
- * 7. 构造统一处理结果
- *
- * 当前阶段日志：
- * - 只记录关键阶段和结果概要
- * - 引用信息统一复用 StageLogRefs
- *
- * 第 27 小步的重点：
- * - 结果日志摘要不再由 MessageProcessor 手写拼接
- * - 改为统一委托给 MessageProcessingResultFactory
+ * - 正式入口为 MessageProcessRequest
+ * - 兼容旧调用时，仍允许直接传入 SignalingMessage
  */
 @Service
 public class MessageProcessor {
@@ -49,8 +32,8 @@ public class MessageProcessor {
     private final ProcedureProcessingStage procedureProcessingStage;
     private final PendingDecryptQueue pendingDecryptQueue;
     private final MessageProcessingResultFactory resultFactory;
-
     private final PendingRetryService pendingRetryService;
+    private final MessageStageEventPublisher stageEventPublisher;
 
     public MessageProcessor(
             UeContextService ueContextService,
@@ -59,7 +42,8 @@ public class MessageProcessor {
             ProcedureProcessingStage procedureProcessingStage,
             PendingDecryptQueue pendingDecryptQueue,
             MessageProcessingResultFactory resultFactory,
-            @Lazy PendingRetryService pendingRetryService
+            @Lazy PendingRetryService pendingRetryService,
+            MessageStageEventPublisher stageEventPublisher
     ) {
         this.ueContextService = ueContextService;
         this.classificationService = classificationService;
@@ -68,18 +52,21 @@ public class MessageProcessor {
         this.pendingDecryptQueue = pendingDecryptQueue;
         this.resultFactory = resultFactory;
         this.pendingRetryService = pendingRetryService;
+        this.stageEventPublisher = stageEventPublisher;
     }
 
-    public MessageProcessingResult process(SignalingMessage msg) {
-        MessageProcessingContext context = initializeContext(msg);
+    public MessageProcessingResult process(MessageProcessRequest request) {
+        MessageProcessingContext context = initializeContext(request);
 
         logMainEntry(context);
+        publishStageEvent(context, "message-main-enter");
 
         runClassificationStage(context);
         loadUeContext(context);
 
         MessageProcessingResult earlyResult = handleDecryptStage(context);
         if (earlyResult != null) {
+            publishStageEvent(context, "message-main-early-return");
             logMainEarlyReturn(context, earlyResult);
             return earlyResult;
         }
@@ -88,20 +75,30 @@ public class MessageProcessor {
         retryPendingDecrypt(context);
 
         MessageProcessingResult finalResult = buildResult(context);
+        publishStageEvent(context, "message-main-exit");
         logMainExit(context, finalResult);
         return finalResult;
     }
 
-    private MessageProcessingContext initializeContext(SignalingMessage msg) {
-        return new MessageProcessingContext(msg);
+    public MessageProcessingResult process(SignalingMessage msg) {
+        return process(MessageProcessRequest.of(msg));
+    }
+
+    private MessageProcessingContext initializeContext(MessageProcessRequest request) {
+        return new MessageProcessingContext(request);
     }
 
     private void runClassificationStage(MessageProcessingContext context) {
         classificationService.classify(context);
 
-        log.debug("Message stage[classification] done: {}, category={}",
+        publishStageEvent(context, "message-classification");
+
+        log.debug("Message stage[classification] done: {}, category={}, sourceType={}, correlationId={}, reentry={}",
                 StageLogRefs.context(context),
-                context.getCategory());
+                context.getCategory(),
+                context.getSourceType(),
+                context.getCorrelationId(),
+                context.isReentry());
     }
 
     private void loadUeContext(MessageProcessingContext context) {
@@ -109,9 +106,12 @@ public class MessageProcessor {
         UEContext ueContext = ueContextService.getContext(msg.getUeId());
         context.setUeContext(ueContext);
 
-        log.debug("Message stage[load-ue-context] done: {}, hasContext={}",
+        publishStageEvent(context, "message-load-ue-context");
+
+        log.debug("Message stage[load-ue-context] done: {}, hasContext={}, correlationId={}",
                 StageLogRefs.context(context),
-                context.hasUeContext());
+                context.hasUeContext(),
+                context.getCorrelationId());
     }
 
     private MessageProcessingResult handleDecryptStage(MessageProcessingContext context) {
@@ -119,19 +119,26 @@ public class MessageProcessor {
                 messageDecryptStage.handleEncryptedMessageIfNeeded(context);
 
         if (decryptResult == null) {
-            log.debug("Message stage[decrypt] skipped-early-exit: {}, enc={}, encType={}",
+            publishStageEvent(context, "message-decrypt-skip");
+
+            log.debug("Message stage[decrypt] skipped-early-exit: {}, enc={}, encType={}, correlationId={}, reentry={}",
                     StageLogRefs.context(context),
                     context.isEncrypted(),
-                    StageLogRefs.safe(context.getEncryptedType()));
+                    StageLogRefs.safe(context.getEncryptedType()),
+                    context.getCorrelationId(),
+                    context.isReentry());
             return null;
         }
 
-        log.debug("Message stage[decrypt] result: {}, encType={}, status={}, reason={}, error={}",
+        publishStageEvent(context, "message-decrypt-result");
+
+        log.debug("Message stage[decrypt] result: {}, encType={}, status={}, reason={}, error={}, correlationId={}",
                 StageLogRefs.context(context),
                 StageLogRefs.safe(context.getEncryptedType()),
                 decryptResult.getStatus(),
                 decryptResult.getReason(),
-                decryptResult.getError());
+                decryptResult.getError(),
+                context.getCorrelationId());
 
         if (context.isDecryptOk()) {
             return handleDecryptSuccess(context);
@@ -148,14 +155,26 @@ public class MessageProcessor {
     private MessageProcessingResult handleDecryptSuccess(MessageProcessingContext context) {
         boolean reentered = messageDecryptStage.handleDecryptSuccess(context);
 
-        log.debug("Message stage[decrypt-success] handled: {}, reentered={}",
+        publishStageEvent(context, "message-decrypt-success");
+
+        log.debug("Message stage[decrypt-success] handled: {}, reentered={}, correlationId={}",
                 StageLogRefs.context(context),
-                reentered);
+                reentered,
+                context.getCorrelationId());
 
         if (reentered) {
-            log.info("Message main-chain reenter: {}",
-                    StageLogRefs.context(context));
-            return process(context.getMessage());
+            log.info("Message main-chain reenter: {}, correlationId={}, sourceType={}",
+                    StageLogRefs.context(context),
+                    context.getCorrelationId(),
+                    context.getSourceType());
+
+            return process(
+                    MessageProcessRequest.reentry(
+                            context.getMessage(),
+                            deriveReentrySourceName(context),
+                            context.getCorrelationId()
+                    )
+            );
         }
 
         return buildResult(context);
@@ -173,37 +192,47 @@ public class MessageProcessor {
                 decryptResult.getReason()
         );
 
-        log.info("Message pending-enqueue: {}, encType={}, reason={}",
+        publishStageEvent(context, "message-pending-enqueue");
+
+        log.info("Message pending-enqueue: {}, encType={}, reason={}, correlationId={}",
                 StageLogRefs.context(context),
                 StageLogRefs.safe(context.getEncryptedType()),
-                decryptResult.getReason());
+                decryptResult.getReason(),
+                context.getCorrelationId());
     }
 
     private void runProcedureStage(MessageProcessingContext context) {
         procedureProcessingStage.process(context);
 
-        log.debug("Message stage[procedure] done: {}, category={}, procedureId={}, procedureType={}",
+        publishStageEvent(context, "message-procedure");
+
+        log.debug("Message stage[procedure] done: {}, category={}, procedureId={}, procedureType={}, correlationId={}",
                 StageLogRefs.context(context),
                 context.getCategory(),
                 context.getMatchedProcedureId(),
-                context.getMatchedProcedureTypeCode());
+                context.getMatchedProcedureTypeCode(),
+                context.getCorrelationId());
     }
 
     private void retryPendingDecrypt(MessageProcessingContext context) {
         SignalingMessage msg = context.getMessage();
         UEContext refreshedContext = ueContextService.getContext(msg.getUeId());
 
-        log.debug("Message stage[pending-retry] start: {}, hasRefreshedContext={}",
+        log.debug("Message stage[pending-retry] start: {}, hasRefreshedContext={}, correlationId={}",
                 StageLogRefs.context(context),
-                refreshedContext != null);
+                refreshedContext != null,
+                context.getCorrelationId());
 
         pendingRetryService.retryPendingDecrypt(
                 msg.getUeId(),
                 refreshedContext
         );
 
-        log.debug("Message stage[pending-retry] done: {}",
-                StageLogRefs.context(context));
+        publishStageEvent(context, "message-pending-retry");
+
+        log.debug("Message stage[pending-retry] done: {}, correlationId={}",
+                StageLogRefs.context(context),
+                context.getCorrelationId());
     }
 
     private MessageProcessingResult buildResult(MessageProcessingContext context) {
@@ -211,21 +240,39 @@ public class MessageProcessor {
     }
 
     private void logMainEntry(MessageProcessingContext context) {
-        log.debug("Message main-chain enter: {}, enc={}, encType={}",
+        log.debug("Message main-chain enter: {}, enc={}, encType={}, sourceType={}, sourceName={}, correlationId={}, reentry={}",
                 StageLogRefs.context(context),
                 context.isEncrypted(),
-                StageLogRefs.safe(context.getEncryptedType()));
+                StageLogRefs.safe(context.getEncryptedType()),
+                context.getSourceType(),
+                StageLogRefs.safe(context.getSourceName()),
+                context.getCorrelationId(),
+                context.isReentry());
     }
 
     private void logMainEarlyReturn(MessageProcessingContext context, MessageProcessingResult result) {
-        log.debug("Message main-chain early-return: {}, {}",
+        log.debug("Message main-chain early-return: {}, {}, correlationId={}",
                 StageLogRefs.context(context),
-                resultFactory.summary(result));
+                resultFactory.summary(result),
+                context.getCorrelationId());
     }
 
     private void logMainExit(MessageProcessingContext context, MessageProcessingResult result) {
-        log.debug("Message main-chain exit: {}, {}",
+        log.debug("Message main-chain exit: {}, {}, correlationId={}",
                 StageLogRefs.context(context),
-                resultFactory.summary(result));
+                resultFactory.summary(result),
+                context.getCorrelationId());
+    }
+
+    private void publishStageEvent(MessageProcessingContext context, String stageName) {
+        stageEventPublisher.publish(context.toStageEvent(stageName));
+    }
+
+    private String deriveReentrySourceName(MessageProcessingContext context) {
+        String sourceName = context.getSourceName();
+        if (sourceName == null || sourceName.isBlank()) {
+            return "internal-reentry";
+        }
+        return sourceName + "#reentry";
     }
 }
