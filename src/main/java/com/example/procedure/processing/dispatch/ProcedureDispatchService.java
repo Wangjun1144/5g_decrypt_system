@@ -1,6 +1,7 @@
 package com.example.procedure.processing.dispatch;
 
 import com.example.procedure.context.UeContextService;
+import com.example.procedure.context.UeContextUpdateRequest;
 import com.example.procedure.model.MessageCategory;
 import com.example.procedure.model.SignalingMessage;
 import com.example.procedure.processing.message.MessageProcessingContext;
@@ -20,11 +21,27 @@ import org.springframework.stereotype.Service;
 @Service
 public class ProcedureDispatchService {
 
+    /**
+     * 日志器。
+     */
     private static final Logger log = LoggerFactory.getLogger(ProcedureDispatchService.class);
 
+    /**
+     * UE 上下文服务。
+     */
     private final UeContextService ueContextService;
+
+    /**
+     * 流程分发事件发布器。
+     */
     private final ProcedureDispatchEventPublisher eventPublisher;
 
+    /**
+     * 构造流程分发服务。
+     *
+     * @param ueContextService UE 上下文服务
+     * @param eventPublisher 流程分发事件发布器
+     */
     public ProcedureDispatchService(
             UeContextService ueContextService,
             ProcedureDispatchEventPublisher eventPublisher
@@ -36,9 +53,7 @@ public class ProcedureDispatchService {
     /**
      * 新的正式入口：直接接收主链上下文。
      *
-     * 这样做的好处：
-     * - 分发阶段可以直接访问来源元数据、流程匹配结果、消息本体
-     * - 为后续事件发布、审计、异步分发打基础
+     * @param context 当前主链上下文
      */
     public void dispatch(MessageProcessingContext context) {
         SignalingMessage msg = context.getMessage();
@@ -60,7 +75,15 @@ public class ProcedureDispatchService {
         );
 
         if (shouldUpdateInitialAccessContext(category, procedureTypeCode)) {
-            ueContextService.updateOnInitialAccess(msg, procedureId);
+            // REFACTOR STEP: UE_CONTEXT_BOUNDARY
+            ueContextService.process(new UeContextUpdateRequest(
+                    msg,
+                    procedureId,
+                    context.getSourceType(),
+                    context.getSourceName(),
+                    context.getCorrelationId(),
+                    context.isReentry()
+            ));
         }
 
         publishDispatchEvent(context);
@@ -68,6 +91,11 @@ public class ProcedureDispatchService {
 
     /**
      * 兼容旧调用方式，避免一次性修改过多调用方。
+     *
+     * @param msg 当前消息
+     * @param category 当前消息分类
+     * @param procedureId 当前流程 ID
+     * @param procedureTypeCode 当前流程类型编码
      */
     public void dispatch(
             SignalingMessage msg,
@@ -106,6 +134,11 @@ public class ProcedureDispatchService {
         eventPublisher.publish(event);
     }
 
+    /**
+     * 发布一条流程分发事件。
+     *
+     * @param context 当前主链上下文
+     */
     private void publishDispatchEvent(MessageProcessingContext context) {
         SignalingMessage msg = context.getMessage();
 
@@ -128,6 +161,13 @@ public class ProcedureDispatchService {
         eventPublisher.publish(event);
     }
 
+    /**
+     * 判断当前消息是否需要触发 IA 上下文更新。
+     *
+     * @param category 当前消息分类
+     * @param procedureTypeCode 当前流程类型编码
+     * @return true 表示需要更新
+     */
     private boolean shouldUpdateInitialAccessContext(
             MessageCategory category,
             String procedureTypeCode

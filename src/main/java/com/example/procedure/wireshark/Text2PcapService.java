@@ -17,14 +17,15 @@ import java.nio.file.Path;
 public class Text2PcapService {
 
     /**
-     * 新的 pcap 构建器正式边界。
+     * 旧兼容层仍然依赖旧兼容接口，
+     * 这样对老调用方最稳定。
      */
     private final PcapBuilder delegate;
 
     /**
      * 构造旧兼容层。
      *
-     * @param delegate 正式 pcap 构建器
+     * @param delegate 旧兼容接口实现
      */
     public Text2PcapService(PcapBuilder delegate) {
         this.delegate = delegate;

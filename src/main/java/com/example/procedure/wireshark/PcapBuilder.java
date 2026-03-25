@@ -1,25 +1,16 @@
 package com.example.procedure.wireshark;
 
-import java.nio.file.Path;
+import com.example.procedure.infrastructure.decode.PcapBuildTool;
 
 /**
- * pcap 构建器。
+ * @deprecated 旧的 pcap 构建器命名。
  *
- * 当前用途：
- * 1. 为本地 text2pcap 进程调用建立正式基础设施接口
- * 2. 让上层不再依赖历史命名的 Text2PcapService
- * 3. 为后续切换成本地替代实现、远程构建服务、mock 实现预留稳定边界
+ * 当前保留原因：
+ * 1. 旧代码可能仍然依赖 wireshark.PcapBuilder 这个名字
+ * 2. 新的正式基础设施边界已经迁到 infrastructure.decode.PcapBuildTool
+ * 3. 这里保留为兼容接口，避免一次性修改所有调用方
  */
-public interface PcapBuilder {
-
-    /**
-     * 根据 hexdump 文件构建 pcap。
-     *
-     * @param hexdumpFile hexdump 文件
-     * @param dlt DLT 类型
-     * @param outPcap 输出 pcap 文件
-     * @return 构建完成后的 pcap 路径
-     * @throws Exception 构建失败时抛出异常
-     */
-    Path buildPcap(Path hexdumpFile, int dlt, Path outPcap) throws Exception;
+@Deprecated
+// REFACTOR STEP: PACKAGE_REORG_INFRA_DECODE
+public interface PcapBuilder extends PcapBuildTool {
 }

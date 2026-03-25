@@ -1,85 +1,44 @@
 package com.example.procedure.rule;
 
 import com.example.procedure.model.Procedure;
-import com.example.procedure.model.ProcedureTypeEnum;
-import com.example.procedure.rule.InitialAccessKeyBits;
-import com.example.procedure.rule.XnHandoverKeyBits;
+import com.example.procedure.processing.procedure.flow.ProcedureClosePolicy;
+import org.springframework.stereotype.Component;
 
+/**
+ * @deprecated 旧的流程关闭判定器兼容层。
+ *
+ * 当前保留原因：
+ * 1. 旧代码可能还依赖 rule.ProcedureCloseDecider 这个名字
+ * 2. 正式运行期关闭策略已经迁到 processing.procedure.flow 包
+ * 3. 这里收缩为兼容壳，避免旧引用立即失效
+ */
+@Deprecated
+@Component
 public class ProcedureCloseDecider {
 
-    /** IA：成功收口所需的关键位（你已有的那套） */
-    private static final int IA_REQUIRED_MASK =
-            InitialAccessKeyBits.REQUIRED_MASK_WEAK; // 或你自己的命名
-
-    /** XnHO：成功收口（弱条件） */
-    private static final int XHO_REQUIRED_MASK =
-            XnHandoverKeyBits.REQUIRED_MASK_SUCCESS_WEAK;
+    /**
+     * 正式流程关闭策略。
+     */
+    // REFACTOR STEP: RULE_FLOW_BOUNDARY
+    private final ProcedureClosePolicy delegate;
 
     /**
-     * 是否可以关闭该流程
+     * 构造旧兼容层。
+     *
+     * @param delegate 正式流程关闭策略
      */
-    public boolean isReadyToClose(Procedure proc, long nowMs) {
-
-        ProcedureTypeEnum type =
-                ProcedureTypeEnum.fromCode(proc.getProcedureTypeCode());
-
-        int keyMask = proc.getKeyMask();
-
-        switch (type) {
-
-            case INITIAL_ACCESS:
-                return isIaReadyToClose(proc, nowMs);
-
-            case XN_HANDOVER:
-                return isXhoReadyToClose(proc, nowMs);
-
-            default:
-                return false;
-        }
+    public ProcedureCloseDecider(ProcedureClosePolicy delegate) {
+        this.delegate = delegate;
     }
 
-    // ================= IA =================
-
-    private boolean isIaReadyToClose(Procedure proc, long nowMs) {
-
-        // 1) 成功收口：END 已见 + 关键消息齐全
-        if (proc.isEndSeen()
-                && (proc.getKeyMask() & IA_REQUIRED_MASK) == IA_REQUIRED_MASK) {
-            return true;
-        }
-
-        // 2) 兜底超时（防止流程永远挂着）
-        // 你原来就有 maxIdleMillis 的概念，这里可以沿用
-        // 示例：END 已见 + 超过 5 秒
-        if (proc.isEndSeen() && nowMs - proc.getEndSeenAtMs() > 5_000L) {
-            return true;
-        }
-
-        return false;
-    }
-
-    // ================= XnHO =================
-
-    private boolean isXhoReadyToClose(Procedure proc, long nowMs) {
-
-        int keyMask = proc.getKeyMask();
-
-        // 1) 失败收口：任意失败类 bit 出现即可
-        if ((keyMask & XnHandoverKeyBits.FAILURE_ANY_MASK) != 0) {
-            return true;
-        }
-
-        // 2) 成功收口：关键成功位齐全
-        if ((keyMask & XHO_REQUIRED_MASK) == XHO_REQUIRED_MASK) {
-            return true;
-        }
-
-        // 3) 可选兜底超时（防止异常悬挂）
-        // 比如 30 秒没动静
-//        if (nowMs - proc.getLastUpdateMillis() > 30_000L) {
-//            return true;
-//        }
-
-        return false;
+    /**
+     * 兼容旧接口：判断流程是否可以关闭。
+     *
+     * @param procedure 当前流程
+     * @param nowMs 当前时间戳
+     * @return true 表示可以关闭
+     */
+    public boolean isReadyToClose(Procedure procedure, long nowMs) {
+        return delegate.isReadyToClose(procedure, nowMs);
     }
 }

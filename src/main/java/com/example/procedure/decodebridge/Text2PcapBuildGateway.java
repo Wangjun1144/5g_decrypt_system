@@ -1,33 +1,37 @@
 package com.example.procedure.decodebridge;
 
-import com.example.procedure.wireshark.PcapBuilder;
+import com.example.procedure.infrastructure.decode.Text2PcapBuildTool;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
 import java.util.Objects;
 
 /**
- * 基于底层 pcap 构建器的 pcap 构建网关。
+ * 基于正式基础设施构建工具的 pcap 构建网关。
  *
  * 当前职责：
  * 1. 对 decodebridge 层暴露正式 pcap 构建 gateway
- * 2. 内部依赖更底层的 PcapBuilder
- * 3. 不再依赖历史命名的 Text2PcapService
+ * 2. 内部依赖 infrastructure.decode 包下的正式工具实现
+ * 3. 不再依赖 wireshark 包里的历史命名接口
  */
 @Service
 public class Text2PcapBuildGateway implements PcapBuildGateway {
 
     /**
-     * 底层 pcap 构建器。
+     * 底层 pcap 构建工具正式实现。
      */
-    private final PcapBuilder builder;
+    // REFACTOR STEP: PACKAGE_REORG_INFRA_DECODE
+    private final Text2PcapBuildTool builder;
 
     /**
      * 构造 pcap 构建网关。
      *
-     * @param builder 底层 pcap 构建器
+     * 这里直接依赖正式实现类，
+     * 避免和旧兼容层 LocalText2PcapBuilder 形成 Spring 注入歧义。
+     *
+     * @param builder 底层 pcap 构建工具正式实现
      */
-    public Text2PcapBuildGateway(PcapBuilder builder) {
+    public Text2PcapBuildGateway(Text2PcapBuildTool builder) {
         this.builder = builder;
     }
 
@@ -37,7 +41,7 @@ public class Text2PcapBuildGateway implements PcapBuildGateway {
      * @param hexdumpFile hexdump 文件
      * @param dlt DLT 类型
      * @param outPcap 输出 pcap 文件
-     * @return 构建完成后的 pcap 路径
+     * @return 输出 pcap 文件路径
      * @throws Exception 构建失败时抛出异常
      */
     @Override

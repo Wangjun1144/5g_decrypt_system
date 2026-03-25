@@ -1,63 +1,57 @@
 package com.example.procedure.context;
 
+import com.example.procedure.infrastructure.context.RedisUeContextStore;
 import com.example.procedure.model.UEContext;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
-import java.time.Duration;
-import java.util.Map;
-
 /**
- * UeContextRepository 的 Redis 实现。
+ * @deprecated 旧的 Redis UEContext 仓储命名兼容层。
  *
- * 设计说明：
- * - 将 Redis key 规则与序列化细节收口到仓储层
- * - 让上层服务不再直接操作 redisTemplate
- *
- * 当前阶段：
- * - 只先承接 UEContext 主体读写
- * - 未来再把 amf/ran/crnti 等映射逐步并入独立 repository 或补充接口
+ * 当前保留原因：
+ * 1. 旧代码可能还依赖 context.RedisUeContextRepository 这个名字
+ * 2. 新的正式实现已经迁到 infrastructure.context.RedisUeContextStore
+ * 3. 这里收缩为兼容壳，避免旧引用立即失效
  */
+@Deprecated
 @Repository
 public class RedisUeContextRepository implements UeContextRepository {
 
-    private static final String UE_CTX_KEY_PREFIX = "ue:ctx:";
+    /**
+     * 正式 Redis 存储实现。
+     */
+    // REFACTOR STEP: PACKAGE_REORG_INFRA_CONTEXT
+    private final RedisUeContextStore delegate;
 
-    private static final Duration TTL = Duration.ofHours(1);
-
-    private final StringRedisTemplate redisTemplate;
-    private final ObjectMapper objectMapper;
-
-    public RedisUeContextRepository(
-            StringRedisTemplate redisTemplate,
-            ObjectMapper objectMapper
-    ) {
-        this.redisTemplate = redisTemplate;
-        this.objectMapper = objectMapper;
+    /**
+     * 构造兼容层。
+     *
+     * 这里直接依赖正式实现类，
+     * 避免继续以 UeContextRepository 接口类型形成 Bean 候选歧义。
+     *
+     * @param delegate 正式 Redis 存储实现
+     */
+    public RedisUeContextRepository(RedisUeContextStore delegate) {
+        this.delegate = delegate;
     }
 
+    /**
+     * 兼容旧接口：按 UE ID 查找上下文。
+     *
+     * @param ueId UE 标识
+     * @return UEContext
+     */
     @Override
     public UEContext findByUeId(String ueId) {
-        Map<Object, Object> map = redisTemplate.opsForHash().entries(redisKeyForCtx(ueId));
-        if (map == null || map.isEmpty()) {
-            return null;
-        }
-        return objectMapper.convertValue(map, UEContext.class);
+        return delegate.findByUeId(ueId);
     }
 
+    /**
+     * 兼容旧接口：保存上下文。
+     *
+     * @param ctx 当前上下文
+     */
     @Override
-    public void save(UEContext context) {
-        try {
-            Map<String, String> map = objectMapper.convertValue(context, Map.class);
-            redisTemplate.opsForHash().putAll(redisKeyForCtx(context.getUeId()), map);
-            redisTemplate.expire(redisKeyForCtx(context.getUeId()), TTL);
-        } catch (IllegalArgumentException e) {
-            throw new RuntimeException("Failed to serialize UEContext", e);
-        }
-    }
-
-    private String redisKeyForCtx(String ueId) {
-        return UE_CTX_KEY_PREFIX + ueId;
+    public void save(UEContext ctx) {
+        delegate.save(ctx);
     }
 }

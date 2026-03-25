@@ -9,7 +9,8 @@ import com.example.procedure.model.SignalingMessage;
 import com.example.procedure.model.UEContext;
 import com.example.procedure.parser.NasInfo;
 import com.example.procedure.parser.PdcpInfo;
-import com.example.procedure.service.ReentryNodeMergeSupport;
+// REFACTOR STEP: SERVICE_PACKAGE_CLEANUP
+import com.example.procedure.support.reentry.ReentryNodeMergeSupport;
 import com.example.procedure.util.SignalingMessagePrinter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,86 +1,51 @@
 package com.example.procedure.wireshark;
 
+import com.example.procedure.infrastructure.decode.Text2PcapBuildTool;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
 /**
- * 基于本地 text2pcap 进程的 pcap 构建器。
+ * @deprecated 旧的本地 text2pcap 构建器兼容层。
  *
- * 当前职责：
- * 1. 校验 text2pcap 配置
- * 2. 调用本地 text2pcap 进程
- * 3. 生成目标 pcap 文件
- *
- * 当前阶段定位：
- * - 这是 decode 基础设施最底层的 pcap 构建实现
- * - 它只负责把 hexdump 转成 pcap
+ * 当前保留原因：
+ * 1. 旧代码可能还依赖这个类名
+ * 2. 新的正式实现已经迁到 infrastructure.decode.Text2PcapBuildTool
+ * 3. 这里收缩为兼容壳
  */
+@Deprecated
 @Component
 public class LocalText2PcapBuilder implements PcapBuilder {
 
     /**
-     * Wireshark 配置。
+     * 新的正式 pcap 构建工具实现。
      */
-    private final WiresharkProperties props;
+    // REFACTOR STEP: PACKAGE_REORG_INFRA_DECODE
+    private final Text2PcapBuildTool delegate;
 
     /**
-     * 构造本地 text2pcap 构建器。
+     * 构造旧兼容层。
      *
-     * @param props Wireshark 配置
+     * 这里直接依赖正式实现类，
+     * 避免把自己再次作为 PcapBuildTool 候选注入进来。
+     *
+     * @param delegate 正式 pcap 构建工具实现
      */
-    public LocalText2PcapBuilder(WiresharkProperties props) {
-        this.props = props;
+    public LocalText2PcapBuilder(Text2PcapBuildTool delegate) {
+        this.delegate = delegate;
     }
 
     /**
-     * 根据 hexdump 构建 pcap。
+     * 兼容旧接口：根据 hexdump 构建 pcap。
      *
      * @param hexdumpFile hexdump 文件
      * @param dlt DLT 类型
      * @param outPcap 输出 pcap 文件
-     * @return 构建完成后的 pcap 路径
+     * @return 输出 pcap 文件路径
      * @throws Exception 构建失败时抛出异常
      */
     @Override
     public Path buildPcap(Path hexdumpFile, int dlt, Path outPcap) throws Exception {
-        if (hexdumpFile == null || !Files.exists(hexdumpFile)) {
-            throw new IllegalArgumentException("hexdump file not found: " + hexdumpFile);
-        }
-        if (outPcap == null) {
-            throw new IllegalArgumentException("outPcap must not be null");
-        }
-
-        Files.createDirectories(outPcap.getParent());
-
-        String exe = props.getText2pcapPath();
-        if (exe == null || exe.isBlank()) {
-            throw new IllegalStateException("wireshark.text2pcapPath is empty");
-        }
-        if (!Files.exists(Path.of(exe))) {
-            throw new IllegalStateException("text2pcap.exe not found: " + exe);
-        }
-
-        ProcessBuilder pb = new ProcessBuilder(List.of(
-                exe,
-                "-l",
-                String.valueOf(dlt),
-                hexdumpFile.toString(),
-                outPcap.toString()
-        ));
-        pb.redirectErrorStream(true);
-
-        Process process = pb.start();
-        String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        int code = process.waitFor();
-
-        if (code != 0) {
-            throw new RuntimeException("text2pcap failed (exit=" + code + ")\n" + out);
-        }
-
-        return outPcap;
+        return delegate.buildPcap(hexdumpFile, dlt, outPcap);
     }
 }

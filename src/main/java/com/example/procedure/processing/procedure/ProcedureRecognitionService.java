@@ -10,7 +10,7 @@ import com.example.procedure.flow.ScoreScorer;
 import com.example.procedure.model.Procedure;
 import com.example.procedure.model.ProcedureMatchResult;
 import com.example.procedure.model.SignalingMessage;
-import com.example.procedure.rule.ProcedureCloseDecider;
+import com.example.procedure.processing.procedure.flow.ProcedureClosePolicy;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -42,17 +42,21 @@ public class ProcedureRecognitionService {
     private final FlowRegistry flowRegistry;
     private final ProcedureDecisionExecutor procedureDecisionExecutor;
     private final ProcedureScoreService procedureScoreService;
+    // REFACTOR STEP: RULE_FLOW_BOUNDARY
+    private final ProcedureClosePolicy procedureClosePolicy;
 
     public ProcedureRecognitionService(
             ProcedureStateService procedureStateService,
             FlowRegistry flowRegistry,
             ProcedureDecisionExecutor procedureDecisionExecutor,
-            ProcedureScoreService procedureScoreService
+            ProcedureScoreService procedureScoreService,
+            ProcedureClosePolicy procedureClosePolicy
     ) {
         this.procedureStateService = procedureStateService;
         this.flowRegistry = flowRegistry;
         this.procedureDecisionExecutor = procedureDecisionExecutor;
         this.procedureScoreService = procedureScoreService;
+        this.procedureClosePolicy = procedureClosePolicy;
     }
 
     public ProcedureMatchResult recognize(SignalingMessage msg) {
@@ -64,7 +68,7 @@ public class ProcedureRecognitionService {
         long nowMs = System.currentTimeMillis();
 
         List<Procedure> activeList = procedureStateService.listActiveProcedures(ueId);
-        FlowContext ctx = new FlowContext(procedureStateService, new ProcedureCloseDecider());
+        FlowContext ctx = new FlowContext(procedureStateService, procedureClosePolicy);
 
         ScoreScorer scorer = procedureScoreService::score;
 
