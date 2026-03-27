@@ -1,5 +1,6 @@
 package com.example.procedure.infrastructure.binding;
 
+import com.example.procedure.processing.binding.resolve.BindingStateStore;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -16,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 3. 业务层不应直接关心 Redis key 细节
  */
 @Component
-public class RedisBindingStateStore {
+public class RedisBindingStateStore implements BindingStateStore {
 
     /**
      * ranUeNgapId -> ueId 映射的 Redis key 前缀。
@@ -69,6 +70,7 @@ public class RedisBindingStateStore {
      * @return 已绑定的 ueId；不存在则返回 null
      */
     // REFACTOR STEP: PACKAGE_REORG_INFRA_BINDING
+    @Override
     public String lookupUeIdByNgapId(String ngapId) {
         if (isEmpty(ngapId)) {
             return null;
@@ -88,6 +90,7 @@ public class RedisBindingStateStore {
      * @return 已绑定的 ueId；不存在则返回 null
      */
     // REFACTOR STEP: PACKAGE_REORG_INFRA_BINDING
+    @Override
     public String lookupUeIdByRntiType(String rntiType) {
         if (isEmpty(rntiType)) {
             return null;
@@ -107,6 +110,7 @@ public class RedisBindingStateStore {
      * @return true 表示未绑定
      */
     // REFACTOR STEP: PACKAGE_REORG_INFRA_BINDING
+    @Override
     public boolean isUeNgapUnbound(String ueId) {
         if (isEmpty(ueId)) {
             return false;
@@ -121,6 +125,7 @@ public class RedisBindingStateStore {
      * @return true 表示未绑定
      */
     // REFACTOR STEP: PACKAGE_REORG_INFRA_BINDING
+    @Override
     public boolean isUeRntiUnbound(String ueId) {
         if (isEmpty(ueId)) {
             return false;
@@ -135,6 +140,7 @@ public class RedisBindingStateStore {
      * @return true 表示尚未绑定
      */
     // REFACTOR STEP: PACKAGE_REORG_INFRA_BINDING
+    @Override
     public boolean isNgapUnbound(String ngapId) {
         if (isEmpty(ngapId)) {
             return false;
@@ -154,6 +160,7 @@ public class RedisBindingStateStore {
      * @return true 表示尚未绑定
      */
     // REFACTOR STEP: PACKAGE_REORG_INFRA_BINDING
+    @Override
     public boolean isRntiTypeUnbound(String rntiType) {
         if (isEmpty(rntiType)) {
             return false;
@@ -173,6 +180,7 @@ public class RedisBindingStateStore {
      * @param ueId ueId
      */
     // REFACTOR STEP: PACKAGE_REORG_INFRA_BINDING
+    @Override
     public void bindNgapIdToUe(String ngapId, String ueId) {
         if (isEmpty(ngapId) || isEmpty(ueId)) {
             return;
@@ -194,6 +202,7 @@ public class RedisBindingStateStore {
      * @param ueId ueId
      */
     // REFACTOR STEP: PACKAGE_REORG_INFRA_BINDING
+    @Override
     public void bindRntiTypeToUe(String rntiType, String ueId) {
         if (isEmpty(rntiType) || isEmpty(ueId)) {
             return;

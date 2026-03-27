@@ -2,7 +2,9 @@ package com.example.scene.decodersystem;
 
 import com.example.procedure.Application;
 import com.example.procedure.model.ProcedureTypeEnum;
-import com.example.procedure.service.ProManager_Service;
+import com.example.procedure.application.procedure.ProcedureStateApplicationService;
+import com.example.procedure.processing.procedure.state.ActiveProceduresView;
+import com.example.procedure.processing.procedure.state.ProcedureStateOperationResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -13,34 +15,30 @@ import java.util.Map;
 class SceneServiceTests {
 
     @Autowired
-    private ProManager_Service proContextService;
+    private ProcedureStateApplicationService procedureStateApplicationService;
 
     @Test
     void testAddAndGetScene() {
         String ueId = "460011234567890";
-        // 1️⃣ 新增场景
-        Map<String, Object> addResult = proContextService.add_ActProcedure(
+        ProcedureStateOperationResult addResult = procedureStateApplicationService.createActiveProcedure(
                 ueId, ProcedureTypeEnum.INITIAL_ACCESS, "RRCSetupRequest"
         );
         System.out.println("Add result = " + addResult);
 
-        // 2️⃣ 查询场景
-        Map<String, Object> activeScenes = proContextService.get_ActProcedures(ueId);
+        ActiveProceduresView activeScenes = procedureStateApplicationService.getActiveProcedures(ueId);
         System.out.println("Active scenes = " + activeScenes);
     }
 
     @Test
     void testUpdateScene() {
         String ueId = "460011234567890";
-        // 先新增
-        Map<String, Object> addResult = proContextService.add_ActProcedure(
+        ProcedureStateOperationResult addResult = procedureStateApplicationService.createActiveProcedure(
                 ueId, ProcedureTypeEnum.INITIAL_ACCESS, "NAS-AuthRequest"
         );
-        String sceneId = (String) addResult.get("procedureId");
+        String sceneId = addResult.getProcedureId();
 
-        // 再更新
-        Map<String, Object> updateResult = proContextService.update_ActProcedure(
-                ueId, sceneId, "SecurityModeCommand", 2 ,3
+        ProcedureStateOperationResult updateResult = procedureStateApplicationService.updateActiveProcedure(
+                ueId, sceneId, "SecurityModeCommand", 2, 3
         );
         System.out.println("Update result = " + updateResult);
     }
@@ -48,12 +46,12 @@ class SceneServiceTests {
     @Test
     void testEndScene() {
         String ueId = "460011234567890";
-        Map<String, Object> addResult = proContextService.add_ActProcedure(
+        ProcedureStateOperationResult addResult = procedureStateApplicationService.createActiveProcedure(
                 ueId, ProcedureTypeEnum.INITIAL_ACCESS, "NAS-AuthRequest"
         );
-        String sceneId = (String) addResult.get("procedureId");
+        String sceneId = addResult.getProcedureId();
 
-        Map<String, Object> endResult = proContextService.end_Procedure(ueId, sceneId);
+        ProcedureStateOperationResult endResult = procedureStateApplicationService.endProcedure(ueId, sceneId);
         System.out.println("End result = " + endResult);
     }
 }

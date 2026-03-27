@@ -2,8 +2,8 @@ package com.example.procedure.processing.procedure.flow;
 
 import com.example.procedure.model.Procedure;
 import com.example.procedure.model.ProcedureTypeEnum;
-import com.example.procedure.rule.InitialAccessKeyBits;
-import com.example.procedure.rule.XnHandoverKeyBits;
+import com.example.procedure.processing.procedure.ruledef.InitialAccessKeyBits;
+import com.example.procedure.processing.procedure.ruledef.XnHandoverKeyBits;
 import org.springframework.stereotype.Component;
 
 /**

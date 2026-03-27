@@ -1,6 +1,6 @@
 package com.example.procedure.infrastructure.decode;
 
-import com.example.procedure.wireshark.WiresharkProperties;
+import com.example.procedure.infrastructure.wireshark.WiresharkProperties;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -9,40 +9,40 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * 基于本地 text2pcap 的 pcap 构建工具。
+ * 鍩轰簬鏈湴 text2pcap 鐨?pcap 鏋勫缓宸ュ叿銆?
  *
- * 当前职责：
- * 1. 校验 text2pcap 配置
- * 2. 调用本地 text2pcap 进程
- * 3. 生成目标 pcap 文件
+ * 褰撳墠鑱岃矗锛?
+ * 1. 鏍￠獙 text2pcap 閰嶇疆
+ * 2. 璋冪敤鏈湴 text2pcap 杩涚▼
+ * 3. 鐢熸垚鐩爣 pcap 鏂囦欢
  *
- * 这是 infrastructure.decode 包下的正式本地实现。
+ * 杩欐槸 infrastructure.decode 鍖呬笅鐨勬寮忔湰鍦板疄鐜般€?
  */
 @Component
 public class Text2PcapBuildTool implements PcapBuildTool {
 
     /**
-     * Wireshark 配置。
+     * Wireshark 閰嶇疆銆?
      */
     private final WiresharkProperties props;
 
     /**
-     * 构造 text2pcap 构建工具。
+     * 鏋勯€?text2pcap 鏋勫缓宸ュ叿銆?
      *
-     * @param props Wireshark 配置
+     * @param props Wireshark 閰嶇疆
      */
     public Text2PcapBuildTool(WiresharkProperties props) {
         this.props = props;
     }
 
     /**
-     * 根据 hexdump 构建 pcap。
+     * 鏍规嵁 hexdump 鏋勫缓 pcap銆?
      *
-     * @param hexdumpFile hexdump 文件
-     * @param dlt DLT 类型
-     * @param outPcap 输出 pcap 文件
-     * @return 输出 pcap 文件路径
-     * @throws Exception 构建失败时抛出异常
+     * @param hexdumpFile hexdump 鏂囦欢
+     * @param dlt DLT 绫诲瀷
+     * @param outPcap 杈撳嚭 pcap 鏂囦欢
+     * @return 杈撳嚭 pcap 鏂囦欢璺緞
+     * @throws Exception 鏋勫缓澶辫触鏃舵姏鍑哄紓甯?
      */
     @Override
     // REFACTOR STEP: PACKAGE_REORG_INFRA_DECODE

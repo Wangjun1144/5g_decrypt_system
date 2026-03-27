@@ -1,16 +1,13 @@
 package com.example.scene.decodersystem;
 
 import com.example.procedure.Application;
-import com.example.procedure.decodebridge.DebugDecodeArtifacts;
-import com.example.procedure.decodebridge.PcapParseBridgeService;
-import com.example.procedure.decodebridge.PlaintextDecodeRequest;
-import com.example.procedure.decodebridge.PlaintextPacketParseBridgeService;
-import com.example.procedure.model.MessageProcessingResult;
+import com.example.procedure.application.message.SignalingMessagePipeline;
+import com.example.procedure.infrastructure.decode.bridge.pcap.PcapParseBridgeService;
+import com.example.procedure.infrastructure.decode.bridge.plaintext.debug.DebugDecodeArtifacts;
+import com.example.procedure.infrastructure.decode.bridge.plaintext.PlaintextDecodeRequest;
+import com.example.procedure.infrastructure.decode.bridge.plaintext.PlaintextPacketParseBridgeService;
 import com.example.procedure.model.SignalingMessage;
-
-import com.example.procedure.rule.UeIdBinder;
-import com.example.procedure.service.MsgProcessing_Service;
-import com.example.procedure.util.SignalingMessagePrinter;
+import com.example.procedure.support.logging.SignalingMessagePrinter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -29,49 +26,48 @@ class PlaintextPacketParseBridgeIT {
     private PcapParseBridgeService pcapParseBridgeService;
 
     @Autowired
-    private UeIdBinder ueIdBinder;
-
-    @Autowired
-    private MsgProcessing_Service messageProcessingService;
+    private SignalingMessagePipeline signalingMessagePipeline;
 
     /**
-     * 复用你现有的处理入口风格：
-     * 先交给 ueIdBinder，再进入 messageProcessingService
+     * 澶嶇敤浣犵幇鏈夌殑澶勭悊鍏ュ彛椋庢牸锛?
+     * 鍏堜氦缁?ueIdBinder锛屽啀杩涘叆 messageProcessingService
+     */
+    /**
+     * Reuse the formal ingress pipeline so bridge tests follow the same entry path as production.
      */
     private void processOne(SignalingMessage msg) {
-        ueIdBinder.handle(msg, m -> {
-            MessageProcessingResult result = messageProcessingService.process(m);
+        // Bridge tests now enter through the formal pipeline so binding and main processing
+        // follow the same ingress path as production traffic.
+        signalingMessagePipeline.process(msg);
 
-            System.out.println("=== processOne ===");
-            System.out.println("msgId     = " + m.getMsgId());
-            System.out.println("ueId      = " + m.getUeId());
-            System.out.println("iface     = " + m.getIface());
-            System.out.println("direction = " + m.getDirection());
-            System.out.println("layer     = " + m.getProtocolLayer());
-            System.out.println("msgType   = " + m.getMsgType());
-            System.out.println("result    = " + result);
+        System.out.println("=== processOne ===");
+        System.out.println("msgId     = " + msg.getMsgId());
+        System.out.println("ueId      = " + msg.getUeId());
+        System.out.println("iface     = " + msg.getIface());
+        System.out.println("direction = " + msg.getDirection());
+        System.out.println("layer     = " + msg.getProtocolLayer());
+        System.out.println("msgType   = " + msg.getMsgType());
 
-            SignalingMessagePrinter.printAndWriteToFile(
-                    m, Paths.get("logs/signaling_dump.log"), true
-            );
-        });
+        SignalingMessagePrinter.printAndWriteToFile(
+                msg, Paths.get("logs/signaling_dump.log"), true
+        );
     }
 
     /**
-     * 这个方法只是为了验证：已有真实 pcap 仍然能走统一桥
+     * 杩欎釜鏂规硶鍙槸涓轰簡楠岃瘉锛氬凡鏈夌湡瀹?pcap 浠嶇劧鑳借蛋缁熶竴妗?
      */
     private void processPcap(Path pcap, Set<String> wanted, Set<String> enabledRaw) throws Exception {
         pcapParseBridgeService.parsePcap(pcap, wanted, enabledRaw, this::processOne);
     }
 
     /**
-     * 测试1：
-     * 明文 hex -> 调试落盘 pcap/json -> 再进入统一解析链
+     * 娴嬭瘯1锛?
+     * 鏄庢枃 hex -> 璋冭瘯钀界洏 pcap/json -> 鍐嶈繘鍏ョ粺涓€瑙ｆ瀽閾?
      *
-     * 适合你先看：
-     * - pcap 有没有生成
-     * - json 有没有生成
-     * - processOne 有没有被触发
+     * 閫傚悎浣犲厛鐪嬶細
+     * - pcap 鏈夋病鏈夌敓鎴?
+     * - json 鏈夋病鏈夌敓鎴?
+     * - processOne 鏈夋病鏈夎瑙﹀彂
      */
     @Test
     void debug_build_parse_rrc_plaintext() throws Exception {
@@ -110,10 +106,10 @@ class PlaintextPacketParseBridgeIT {
     }
 
     /**
-     * 测试2：
-     * 明文 hex -> 临时 pcap -> 直接流式进入统一解析链
+     * 娴嬭瘯2锛?
+     * 鏄庢枃 hex -> 涓存椂 pcap -> 鐩存帴娴佸紡杩涘叆缁熶竴瑙ｆ瀽閾?
      *
-     * 适合你验证正式使用路径。
+     * 閫傚悎浣犻獙璇佹寮忎娇鐢ㄨ矾寰勩€?
      */
     @Test
     void stream_build_parse_rrc_plaintext() throws Exception {
@@ -146,9 +142,9 @@ class PlaintextPacketParseBridgeIT {
     }
 
     /**
-     * 测试3（可选）：
-     * 验证真实 pcap 也能复用统一桥。
-     * 你有文件时再打开这个测试。
+     * 娴嬭瘯3锛堝彲閫夛級锛?
+     * 楠岃瘉鐪熷疄 pcap 涔熻兘澶嶇敤缁熶竴妗ャ€?
+     * 浣犳湁鏂囦欢鏃跺啀鎵撳紑杩欎釜娴嬭瘯銆?
      */
     // @Test
     void process_existing_pcap_through_bridge() throws Exception {

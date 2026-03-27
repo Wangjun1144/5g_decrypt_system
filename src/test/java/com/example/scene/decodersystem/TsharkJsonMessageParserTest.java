@@ -2,36 +2,52 @@ package com.example.scene.decodersystem;
 
 import com.example.procedure.Application;
 import com.example.procedure.model.SignalingMessage;
-import com.example.procedure.parser.*;
+import com.example.procedure.infrastructure.parser.TsharkJsonMessageParser;
+import com.example.procedure.model.message.info.MacInfo;
+import com.example.procedure.model.message.info.NUARInfo;
+import com.example.procedure.model.message.info.NasInfo;
+import com.example.procedure.model.message.info.NgapInfo;
+import com.example.procedure.model.message.info.PdcpInfo;
+import com.example.procedure.model.message.info.RrcInfo;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.io.IOException;
 import java.util.List;
 
+/**
+ * Integration-style checks for the file-oriented tshark JSON parser.
+ *
+ * These tests still matter even though the long-term mainline parsing path is
+ * streaming-based, because the file parser remains useful for offline
+ * comparison, regression checks, and exploratory decode workflows.
+ */
 @SpringBootTest(classes = Application.class)
 public class TsharkJsonMessageParserTest {
 
     /**
-     * 只解析 gNB 侧的 json（gnb_capture.json），
-     * 输出每条信令的基础信息。
+     * Parse one pair of gNB/core captures and print the merged message view.
      */
     @Test
     void testParseSingleGnbJson() throws IOException {
         TsharkJsonMessageParser parser = new TsharkJsonMessageParser();
 
-        String gnbPath  = "gnb_capture.json";
-        String gnbPath_raw = "gnb_capture_raw.json";
+        String gnbPath = "gnb_capture.json";
+        String gnbPathRaw = "gnb_capture_raw.json";
         String corePath = "5g_srsRAN_n78_gain40_amf.json";
-        String corePath_raw = "5g_srsRAN_n78_gain40_amf_raw.json";
+        String corePathRaw = "5g_srsRAN_n78_gain40_amf_raw.json";
 
-        List<SignalingMessage> messages = parser.parseAndMerge(gnbPath, corePath,
-                gnbPath_raw, corePath_raw);
+        List<SignalingMessage> messages = parser.parseAndMerge(
+                gnbPath,
+                corePath,
+                gnbPathRaw,
+                corePathRaw
+        );
 
         System.out.println("===== GNB JSON ONLY =====");
         for (SignalingMessage m : messages) {
-            // 基本信息
-            System.out.printf("frame=%d time=%d iface=%s dir=%s layer=%s type=%s messageid=%s ueid=%s%n",
+            System.out.printf(
+                    "frame=%d time=%d iface=%s dir=%s layer=%s type=%s messageid=%s ueid=%s%n",
                     m.getFrameNo(),
                     m.getTimestamp(),
                     m.getIface(),
@@ -42,153 +58,144 @@ public class TsharkJsonMessageParserTest {
                     m.getUeId()
             );
 
-            // ================== MAC 信息 ==================
             MacInfo mac = m.getMacInfo();
             if (mac != null) {
                 System.out.println("  [MAC]");
-                System.out.printf("    rnti=%s, rntiType=%s%n",
-                        mac.getRnti(),
-                        mac.getRntiType());
+                System.out.printf("    rnti=%s, rntiType=%s%n", mac.getRnti(), mac.getRntiType());
             }
 
-            // ================== PDCP 信息 ==================
             PdcpInfo pdcp = m.getPdcpInfo();
             if (pdcp != null) {
                 System.out.println("  [PDCP]");
-                System.out.printf("    signallingDataHex=%s%n",
-                        shortHex(pdcp.getSignallingDataHex(), 80));
-                System.out.printf("    macHex=%s%n",
-                        shortHex(pdcp.getMacHex(), 80));
+                System.out.printf(
+                        "    direction=%s, bearerType=%s, bearerName=%s, seqNum=%s, encrypted=%s%n",
+                        pdcp.getDirection(),
+                        pdcp.getBearerType(),
+                        pdcp.getBearerName(),
+                        pdcp.getSeqnum(),
+                        pdcp.isPdcpencrypted()
+                );
+                System.out.printf(
+                        "    signallingDataHex=%s, macHex=%s%n",
+                        pdcp.getSignallingDataHex(),
+                        pdcp.getMacHex()
+                );
             }
 
-            // ================== RRC 信息 ==================
             RrcInfo rrc = m.getRrcInfo();
             if (rrc != null) {
                 System.out.println("  [RRC]");
-                System.out.printf("    direction=%s, msgName=%s%n",
+                System.out.printf(
+                        "    msgName=%s, direction=%s, crnti=%s, hasDedicatedNas=%s%n",
+                        rrc.getMsgName(),
                         rrc.getDirection(),
-                        rrc.getMsgName());
-                System.out.printf("    integrityProtAlgorithm=%s, cipheringAlgorithm=%s, crnti=%s, hasDedicatedNas=%s%n",
-                        rrc.getIntegrityProtAlgorithm(),
-                        rrc.getCipheringAlgorithm(),
                         rrc.getCrnti(),
-                        rrc.isHasDedicatedNas());
+                        rrc.isHasDedicatedNas()
+                );
+                System.out.printf(
+                        "    cipherAlg=%s, intAlg=%s%n",
+                        rrc.getCipheringAlgorithm(),
+                        rrc.getIntegrityProtAlgorithm()
+                );
             }
 
-            // ================== NGAP 信息 ==================
-            if (m.getNgapInfoList() == null || m.getNgapInfoList().isEmpty()) {
-                System.out.println("  [NGAP] count = 0");
-            } else {
-                System.out.println("  [NGAP] count = " + m.getNasList().size());
-                int idx = 0;
-                for(NgapInfo ngap : m.getNgapInfoList()){
-                    System.out.println("  [NGAP]");
-                    System.out.printf("    pduType=%s, msgName=%s%n",
-                            ngap.getPduType(),
-                            ngap.getMsgName());
-                    System.out.printf("    securityKeyHex=%s%n",
-                            shortHex(ngap.getSecurityKeyHex(), 80));
-                    System.out.printf("    ranUeNgapId=%s%n",
-                            ngap.getRanUeNgapId());
-                }
-
-            }
-
-            // ================== NAUSF (http2:json) 信息 ==================
-            NUARInfo nuar = m.getNuarInfo();
-            if (nuar != null) {
-                System.out.println("  [NAUSF]");
-                System.out.printf("    msgName=%s%n", nuar.getMsgName());
-                System.out.printf("    supi=%s, imsi=%s%n",
-                        nuar.getSupi(),
-                        nuar.getImsi());
-                System.out.printf("    authResult=%s%n",
-                        nuar.getAuthResult());
-                System.out.printf("    kseaf=%s%n",
-                        shortHex(nuar.getKseafHex(), 80));
-            }
-
-            // ================== NAS 信息 ==================
-            if (m.getNasList() == null || m.getNasList().isEmpty()) {
-                System.out.println("  [NAS] count = 0");
-            } else {
-                System.out.println("  [NAS] count = " + m.getNasList().size());
-                int idx = 0;
-                for (NasInfo nas : m.getNasList()) {
-                    String cipherHex = nas.getCipherTextHex();
-                    String shortCipher = shortHex(cipherHex, 80);
-
+            List<NasInfo> nasList = m.getNasList();
+            if (nasList != null && !nasList.isEmpty()) {
+                System.out.println("  [NAS list]");
+                for (int i = 0; i < nasList.size(); i++) {
+                    NasInfo nas = nasList.get(i);
                     System.out.printf(
-                            "    NAS[%d]: encrypted=%s, secHdrType=%s, mmType=%s%n",
-                            idx,
+                            "    #%d mmType=%s enc=%s fullNas=%s cipher=%s mac=%s seq=%d%n",
+                            i,
+                            nas.getMmMessageType(),
                             nas.isEncrypted(),
-                            nas.getSecurityHeaderType(),
-                            nas.getMmMessageType()
+                            nas.getFullNasPduHex(),
+                            nas.getCipherTextHex(),
+                            nas.getMsgAuthCodeHex(),
+                            nas.getSeqNoInt()
                     );
-
                     System.out.printf(
-                            "            encAlgo=%s, intAlgo=%s%n",
-                            nas.getNas_integrityProtAlgorithm(),
-                            nas.getNas_cipheringAlgorithm()
-                    );
-
-                    System.out.printf(
-                            "            GUAMI(mcc=%s, mnc=%s), TMSI=%s, regType5gs=%s%n",
+                            "       guamiMcc=%s guamiMnc=%s tmsi=%s regType=%s%n",
                             nas.getGuamiMcc(),
                             nas.getGuamiMnc(),
                             nas.getTmsi(),
                             nas.getRegType5gs()
                     );
-
                     System.out.printf(
-                            "            cipherTextHex=%s%n",
-                            shortCipher
+                            "       nasCipherAlg=%s nasIntAlg=%s%n",
+                            nas.getNas_cipheringAlgorithm(),
+                            nas.getNas_integrityProtAlgorithm()
                     );
-
-                    idx++;
                 }
             }
 
-            System.out.println("--------------------------------------------------");
+            List<NgapInfo> ngapList = m.getNgapInfoList();
+            if (ngapList != null && !ngapList.isEmpty()) {
+                System.out.println("  [NGAP list]");
+                for (int i = 0; i < ngapList.size(); i++) {
+                    NgapInfo ngap = ngapList.get(i);
+                    System.out.printf(
+                            "    #%d msgName=%s pduType=%s direction=%s ranUeNgapId=%s securityKey=%s%n",
+                            i,
+                            ngap.getMsgName(),
+                            ngap.getPduType(),
+                            ngap.getDirection(),
+                            ngap.getRanUeNgapId(),
+                            ngap.getSecurityKeyHex()
+                    );
+                }
+            }
+
+            NUARInfo nuar = m.getNuarInfo();
+            if (nuar != null) {
+                System.out.println("  [NUAR]");
+                System.out.printf(
+                        "    msgName=%s, supi=%s, imsi=%s, kseaf=%s, authResult=%s%n",
+                        nuar.getMsgName(),
+                        nuar.getSupi(),
+                        nuar.getImsi(),
+                        nuar.getKseafHex(),
+                        nuar.getAuthResult()
+                );
+            }
+
+            System.out.println();
         }
     }
 
-
-    private static String shortHex(String hex, int maxLen) {
-        if (hex == null) return "null";
-        if (hex.length() <= maxLen) return hex;
-        return hex.substring(0, maxLen) + "...";
-    }
-
-
     /**
-     * 同时解析 gNB + AMF 两个 json，
-     * 使用 parseAndMerge 按 timestamp + frameNo 排好时间顺序，
-     * 方便你观察完整的时序流程。
+     * Parse two files without pinning reordering and print the normalized
+     * merged order for inspection.
      */
     @Test
-    void testParseAndMergeGnbAndCore() throws IOException {
+    void testParseAndMergeNoPin() throws IOException {
         TsharkJsonMessageParser parser = new TsharkJsonMessageParser();
 
-        // 按你自己的文件实际路径改
-        String gnbPath  = "gnb_capture.json";
-        String gnbPath_raw = "gnb_capture_raw.json";
+        String gnbPath = "gnb_capture.json";
+        String gnbPathRaw = "gnb_capture_raw.json";
         String corePath = "5g_srsRAN_n78_gain40_amf.json";
-        String corePath_raw = "5g_srsRAN_n78_gain40_amf.json";
+        String corePathRaw = "5g_srsRAN_n78_gain40_amf_raw.json";
 
-        List<SignalingMessage> messages = parser.parseAndMerge(gnbPath, gnbPath_raw,
-                corePath, corePath_raw);
+        List<SignalingMessage> messages = parser.parseAndMergeNoPin(
+                gnbPath,
+                corePath,
+                gnbPathRaw,
+                corePathRaw
+        );
 
-        System.out.println("===== MERGED GNB + CORE JSON =====");
+        System.out.println("===== MERGED NO PIN =====");
         for (SignalingMessage m : messages) {
-            System.out.printf("frame=%d time=%d iface=%s dir=%s layer=%s type=%s%n",
+            System.out.printf(
+                    "frame=%d time=%d iface=%s dir=%s layer=%s type=%s msgId=%s ueId=%s%n",
                     m.getFrameNo(),
                     m.getTimestamp(),
                     m.getIface(),
                     m.getDirection(),
                     m.getProtocolLayer(),
-                    m.getMsgType());
+                    m.getMsgType(),
+                    m.getMsgId(),
+                    m.getUeId()
+            );
         }
     }
 }
-

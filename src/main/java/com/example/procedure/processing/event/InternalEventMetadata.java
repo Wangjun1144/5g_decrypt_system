@@ -1,6 +1,6 @@
 package com.example.procedure.processing.event;
 
-import com.example.procedure.application.message.MessageSourceType;
+import com.example.procedure.model.message.MessageSourceType;
 
 /**
  * 内部事件公共元数据。

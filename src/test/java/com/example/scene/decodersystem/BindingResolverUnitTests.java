@@ -1,13 +1,19 @@
 package com.example.scene.decodersystem;
 
 import com.example.procedure.model.SignalingMessage;
-import com.example.procedure.parser.MacInfo;
-import com.example.procedure.parser.NgapInfo;
-import com.example.procedure.processing.binding.BindingFlushCoordinator;
-import com.example.procedure.processing.binding.BindingResolutionResult;
-import com.example.procedure.processing.binding.BindingResolver;
-import com.example.procedure.processing.binding.BindingStateStore;
-import com.example.procedure.processing.binding.PendingBindingStore;
+import com.example.procedure.model.message.info.MacInfo;
+import com.example.procedure.model.message.info.NgapInfo;
+import com.example.procedure.processing.binding.resolve.BindingExecutor;
+import com.example.procedure.processing.binding.resolve.BindingFlushCoordinator;
+import com.example.procedure.processing.binding.resolve.BindingInputExtractor;
+import com.example.procedure.processing.binding.resolve.BindingStateStore;
+import com.example.procedure.processing.binding.resolve.BindingResolver;
+import com.example.procedure.processing.binding.resolve.PendingBindingDecisionHandler;
+import com.example.procedure.processing.binding.resolve.PendingBindingReleaseService;
+import com.example.procedure.processing.binding.resolve.PendingBindingStore;
+import com.example.procedure.processing.binding.resolve.UeIdResolutionPolicy;
+import com.example.procedure.processing.binding.resolve.UeWaitQueueRegistrar;
+import com.example.procedure.processing.binding.stage.BindingResolutionResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,30 +26,29 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * BindingResolver 的最小行为测试。
+ * BindingResolver 鐨勬渶灏忚涓烘祴璇曘€?
  *
- * 这组测试对应前面第 12、13、14 步之后的绑定阶段结构：
- * - BindingResolver：绑定阶段编排器
- * - BindingStateStore：绑定状态访问门面
- * - PendingBindingStore：待绑定缓冲与等待队列
- * - BindingFlushCoordinator：pending 释放协调器
+ * 杩欑粍娴嬭瘯瀵瑰簲鍓嶉潰绗?12銆?3銆?4 姝ヤ箣鍚庣殑缁戝畾闃舵缁撴瀯锛?
+ * - BindingResolver锛氱粦瀹氶樁娈电紪鎺掑櫒
+ * - RedisBindingStateStore锛氱粦瀹氱姸鎬佽闂疄鐜? * - InMemoryPendingBindingStore锛氬緟缁戝畾缂撳啿涓庣瓑寰呴槦鍒楀疄鐜? * - BindingFlushCoordinator锛歱ending 閲婃斁鍗忚皟鍣?
  *
- * 当前测试重点不是验证所有绑定细节，
- * 而是验证 BindingResolver 的几条核心编排语义：
+ * 褰撳墠娴嬭瘯閲嶇偣涓嶆槸楠岃瘉鎵€鏈夌粦瀹氱粏鑺傦紝
+ * 鑰屾槸楠岃瘉 BindingResolver 鐨勫嚑鏉℃牳蹇冪紪鎺掕涔夛細
  *
- * 1. 无法确定 ueId 时，会进入缓冲分支
- * 2. 已能确定 ueId 时，会给当前消息补 ueId
- * 3. 当前消息携带可直接绑定的新索引时，会优先执行强绑定
- * 4. 强绑定后会触发对应索引的 pending flush
+ * 1. 鏃犳硶纭畾 ueId 鏃讹紝浼氳繘鍏ョ紦鍐插垎鏀?
+ * 2. 宸茶兘纭畾 ueId 鏃讹紝浼氱粰褰撳墠娑堟伅琛?ueId
+ * 3. 褰撳墠娑堟伅鎼哄甫鍙洿鎺ョ粦瀹氱殑鏂扮储寮曟椂锛屼細浼樺厛鎵ц寮虹粦瀹?
+ * 4. 寮虹粦瀹氬悗浼氳Е鍙戝搴旂储寮曠殑 pending flush
  *
- * 当前测试方式：
- * - 不启动 Spring
- * - 直接 new BindingResolver
- * - 所有依赖使用 mock
+ * 褰撳墠娴嬭瘯鏂瑰紡锛?
+ * - 涓嶅惎鍔?Spring
+ * - 鐩存帴 new BindingResolver
+ * - 鎵€鏈変緷璧栦娇鐢?mock
  *
- * 这样更轻，也更适合支撑后续持续小步重构。
+ * 杩欐牱鏇磋交锛屼篃鏇撮€傚悎鏀拺鍚庣画鎸佺画灏忔閲嶆瀯銆?
  */
 class BindingResolverUnitTests {
+    // REFACTOR STEP: COMPAT_SHELL_PRUNE
 
     @Mock
     private BindingStateStore bindingStateStore;
@@ -54,21 +59,50 @@ class BindingResolverUnitTests {
     @Mock
     private BindingFlushCoordinator flushCoordinator;
 
+    private BindingInputExtractor inputExtractor;
+    private UeIdResolutionPolicy ueIdResolutionPolicy;
+    private BindingExecutor bindingExecutor;
+    private PendingBindingReleaseService pendingBindingReleaseService;
+    private PendingBindingDecisionHandler pendingBindingDecisionHandler;
+    private UeWaitQueueRegistrar ueWaitQueueRegistrar;
     private BindingResolver bindingResolver;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-
-        bindingResolver = new BindingResolver(
+        inputExtractor = new BindingInputExtractor();
+        ueIdResolutionPolicy = new UeIdResolutionPolicy(bindingStateStore);
+        bindingExecutor = new BindingExecutor(
                 bindingStateStore,
                 pendingBindingStore,
+                flushCoordinator
+        );
+        pendingBindingReleaseService = new PendingBindingReleaseService(
+                bindingStateStore,
+                pendingBindingStore
+        );
+        pendingBindingDecisionHandler = new PendingBindingDecisionHandler(
+                pendingBindingStore,
+                pendingBindingReleaseService
+        );
+        ueWaitQueueRegistrar = new UeWaitQueueRegistrar(
+                bindingStateStore,
+                pendingBindingStore
+        );
+
+        bindingResolver = new BindingResolver(
+                pendingBindingStore,
+                inputExtractor,
+                ueIdResolutionPolicy,
+                pendingBindingDecisionHandler,
+                ueWaitQueueRegistrar,
+                bindingExecutor,
                 flushCoordinator
         );
     }
 
     /**
-     * 构造一条带 ngapId 的最小消息。
+     * 鏋勯€犱竴鏉″甫 ngapId 鐨勬渶灏忔秷鎭€?
      */
     private SignalingMessage buildMessageWithNgap(String ueId, String ngapId) {
         SignalingMessage msg = new SignalingMessage();
@@ -82,7 +116,7 @@ class BindingResolverUnitTests {
     }
 
     /**
-     * 构造一条带 rntiType 的最小消息。
+     * 鏋勯€犱竴鏉″甫 rntiType 鐨勬渶灏忔秷鎭€?
      */
     private SignalingMessage buildMessageWithRnti(String ueId, String rntiType) {
         SignalingMessage msg = new SignalingMessage();
@@ -96,7 +130,7 @@ class BindingResolverUnitTests {
     }
 
     @Test
-    @DisplayName("无法确定 ueId 时应进入缓冲分支")
+    @DisplayName("鏃犳硶纭畾 ueId 鏃跺簲杩涘叆缂撳啿鍒嗘敮")
     void resolveShouldBufferWhenUeIdCannotBeResolved() {
         SignalingMessage msg = buildMessageWithNgap(null, "RAN-UE-1");
 
@@ -113,12 +147,12 @@ class BindingResolverUnitTests {
         verify(bindingStateStore, times(1)).lookupUeIdByNgapId("RAN-UE-1");
         verify(pendingBindingStore, times(1)).buffer(msg, "RAN-UE-1", null);
 
-        // 当前分支不会进入 flush。
+        // 褰撳墠鍒嗘敮涓嶄細杩涘叆 flush銆?
         verifyNoInteractions(flushCoordinator);
     }
 
     @Test
-    @DisplayName("消息自带 ueId 且携带未绑定 ngapId 时，应优先执行 ngap 强绑定")
+    @DisplayName("resolvable ueId should bind ngap immediately")
     void resolveShouldBindNgapImmediatelyWhenMessageCarriesResolvableUeId() {
         SignalingMessage msg = buildMessageWithNgap("460011234567890", "RAN-UE-1");
 
@@ -148,7 +182,7 @@ class BindingResolverUnitTests {
     }
 
     @Test
-    @DisplayName("消息本身没有 ueId，但可通过 ngapId 反查得到 ueId")
+    @DisplayName("娑堟伅鏈韩娌℃湁 ueId锛屼絾鍙€氳繃 ngapId 鍙嶆煡寰楀埌 ueId")
     void resolveShouldUseUeIdLookedUpByNgap() {
         SignalingMessage msg = buildMessageWithNgap(null, "RAN-UE-2");
 
@@ -168,12 +202,12 @@ class BindingResolverUnitTests {
         verify(pendingBindingStore, times(1))
                 .ensureUeInWaitQueuesIfNeeded("460011234567891", false, true);
 
-        // 因为该 ue 已经不缺 ngap，所以这里不应再执行 ngap 强绑定。
+        // 鍥犱负璇?ue 宸茬粡涓嶇己 ngap锛屾墍浠ヨ繖閲屼笉搴斿啀鎵ц ngap 寮虹粦瀹氥€?
         verify(bindingStateStore, never()).bindNgapIdToUe(anyString(), anyString());
     }
 
     @Test
-    @DisplayName("消息自带 ueId 且携带未绑定 rntiType 时，应优先执行 rnti 强绑定")
+    @DisplayName("resolvable ueId should bind rnti immediately")
     void resolveShouldBindRntiImmediatelyWhenMessageCarriesResolvableUeId() {
         SignalingMessage msg = buildMessageWithRnti("460011234567892", "C-RNTI");
 

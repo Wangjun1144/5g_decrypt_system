@@ -1,9 +1,9 @@
 package com.example.scene.decodersystem;
 
 import com.example.procedure.Application;
-import com.example.procedure.decodebridge.DebugDecodeArtifacts;
-import com.example.procedure.decodebridge.PlaintextDecodeBridgeService;
-import com.example.procedure.decodebridge.PlaintextDecodeRequest;
+import com.example.procedure.infrastructure.decode.bridge.plaintext.debug.DebugDecodeArtifacts;
+import com.example.procedure.infrastructure.decode.bridge.plaintext.PlaintextDecodeBridgeService;
+import com.example.procedure.infrastructure.decode.bridge.plaintext.PlaintextDecodeRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

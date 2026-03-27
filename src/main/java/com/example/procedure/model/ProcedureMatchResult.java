@@ -1,43 +1,32 @@
-package com.example.procedure.model;// package 按你的实际项目来写，比如 package com.xxx.service;
+package com.example.procedure.model;
 
-import com.example.procedure.model.ProcedureTypeEnum;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
+/**
+ * Result returned by the procedure recognition stage.
+ */
 public class ProcedureMatchResult {
 
-    /**
-     * 0 = 成功找到/创建流程
-     * 1 = 不属于任何流程（也没有创建 UNKNOWN）
-     * 2 = 内部错误
-     */
     private int status;
-
-    /**
-     * 错误或说明信息，可选
-     */
     private String message;
-
-    /**
-     * 匹配到或新建的流程 ID
-     */
     private String procedureId;
-
-    /**
-     * 流程类型枚举，例如 INITIAL_ACCESS / UNKNOWN
-     */
     private ProcedureTypeEnum procedureType;
-
-    /**
-     * 是否是本次新创建的流程
-     */
     private boolean newProcedure;
 
-    // 一些便捷静态方法（可选，但用起来很舒服）
+    public ProcedureMatchResult() {
+    }
+
+    public ProcedureMatchResult(
+            int status,
+            String message,
+            String procedureId,
+            ProcedureTypeEnum procedureType,
+            boolean newProcedure
+    ) {
+        this.status = status;
+        this.message = message;
+        this.procedureId = procedureId;
+        this.procedureType = procedureType;
+        this.newProcedure = newProcedure;
+    }
 
     public static ProcedureMatchResult successNew(String procedureId, ProcedureTypeEnum type) {
         return new ProcedureMatchResult(0, null, procedureId, type, true);
@@ -47,11 +36,51 @@ public class ProcedureMatchResult {
         return new ProcedureMatchResult(0, null, procedureId, type, false);
     }
 
-    public static ProcedureMatchResult notMatched(String msg) {
-        return new ProcedureMatchResult(1, msg, null, null, false);
+    public static ProcedureMatchResult notMatched(String message) {
+        return new ProcedureMatchResult(1, message, null, null, false);
     }
 
-    public static ProcedureMatchResult error(String msg) {
-        return new ProcedureMatchResult(2, msg, null, null, false);
+    public static ProcedureMatchResult error(String message) {
+        return new ProcedureMatchResult(2, message, null, null, false);
+    }
+
+    public int getStatus() {
+        return status;
+    }
+
+    public void setStatus(int status) {
+        this.status = status;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public String getProcedureId() {
+        return procedureId;
+    }
+
+    public void setProcedureId(String procedureId) {
+        this.procedureId = procedureId;
+    }
+
+    public ProcedureTypeEnum getProcedureType() {
+        return procedureType;
+    }
+
+    public void setProcedureType(ProcedureTypeEnum procedureType) {
+        this.procedureType = procedureType;
+    }
+
+    public boolean isNewProcedure() {
+        return newProcedure;
+    }
+
+    public void setNewProcedure(boolean newProcedure) {
+        this.newProcedure = newProcedure;
     }
 }

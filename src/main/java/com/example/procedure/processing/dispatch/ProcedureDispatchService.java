@@ -1,46 +1,47 @@
 package com.example.procedure.processing.dispatch;
 
-import com.example.procedure.context.UeContextService;
-import com.example.procedure.context.UeContextUpdateRequest;
+import com.example.procedure.processing.context.UeContextService;
+import com.example.procedure.processing.context.UeContextUpdateRequest;
 import com.example.procedure.model.MessageCategory;
 import com.example.procedure.model.SignalingMessage;
-import com.example.procedure.processing.message.MessageProcessingContext;
+import com.example.procedure.model.message.MessageSourceType;
+import com.example.procedure.processing.message.runtime.MessageProcessingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * 流程分发服务。
+ * 娴佺▼鍒嗗彂鏈嶅姟銆?
  *
- * 当前阶段定位：
- * - 这是“流程处理阶段”中的分发组件
- * - 负责承接流程识别后的统一分发动作
- * - 当前先保留旧系统已有行为，不引入新的业务分支
- * - 同时为后续事件驱动演进收口内部事件发布边界
+ * 褰撳墠闃舵瀹氫綅锛?
+ * - 杩欐槸鈥滄祦绋嬪鐞嗛樁娈碘€濅腑鐨勫垎鍙戠粍浠?
+ * - 璐熻矗鎵挎帴娴佺▼璇嗗埆鍚庣殑缁熶竴鍒嗗彂鍔ㄤ綔
+ * - 褰撳墠鍏堜繚鐣欐棫绯荤粺宸叉湁琛屼负锛屼笉寮曞叆鏂扮殑涓氬姟鍒嗘敮
+ * - 鍚屾椂涓哄悗缁簨浠堕┍鍔ㄦ紨杩涙敹鍙ｅ唴閮ㄤ簨浠跺彂甯冭竟鐣?
  */
 @Service
 public class ProcedureDispatchService {
 
     /**
-     * 日志器。
+     * 鏃ュ織鍣ㄣ€?
      */
     private static final Logger log = LoggerFactory.getLogger(ProcedureDispatchService.class);
 
     /**
-     * UE 上下文服务。
+     * UE 涓婁笅鏂囨湇鍔°€?
      */
     private final UeContextService ueContextService;
 
     /**
-     * 流程分发事件发布器。
+     * 娴佺▼鍒嗗彂浜嬩欢鍙戝竷鍣ㄣ€?
      */
     private final ProcedureDispatchEventPublisher eventPublisher;
 
     /**
-     * 构造流程分发服务。
+     * 鏋勯€犳祦绋嬪垎鍙戞湇鍔°€?
      *
-     * @param ueContextService UE 上下文服务
-     * @param eventPublisher 流程分发事件发布器
+     * @param ueContextService UE 涓婁笅鏂囨湇鍔?
+     * @param eventPublisher 娴佺▼鍒嗗彂浜嬩欢鍙戝竷鍣?
      */
     public ProcedureDispatchService(
             UeContextService ueContextService,
@@ -51,15 +52,16 @@ public class ProcedureDispatchService {
     }
 
     /**
-     * 新的正式入口：直接接收主链上下文。
+     * 鏂扮殑姝ｅ紡鍏ュ彛锛氱洿鎺ユ帴鏀朵富閾句笂涓嬫枃銆?
      *
-     * @param context 当前主链上下文
+     * @param context 褰撳墠涓婚摼涓婁笅鏂?
      */
-    public void dispatch(MessageProcessingContext context) {
+    public ProcedureDispatchOutcome dispatch(MessageProcessingContext context) {
         SignalingMessage msg = context.getMessage();
         MessageCategory category = context.getCategory();
         String procedureId = context.getMatchedProcedureId();
         String procedureTypeCode = context.getMatchedProcedureTypeCode();
+        boolean ueContextUpdated = false;
 
         log.info(
                 "Dispatch msg. ueId={}, msgType={}, category={}, procedureType={}, procedureId={}, sourceType={}, sourceName={}, correlationId={}, reentry={}",
@@ -84,25 +86,28 @@ public class ProcedureDispatchService {
                     context.getCorrelationId(),
                     context.isReentry()
             ));
+            ueContextUpdated = true;
         }
 
         publishDispatchEvent(context);
+        return ProcedureDispatchOutcome.of(true, ueContextUpdated, procedureId, procedureTypeCode);
     }
 
     /**
-     * 兼容旧调用方式，避免一次性修改过多调用方。
+     * 鍏煎鏃ц皟鐢ㄦ柟寮忥紝閬垮厤涓€娆℃€т慨鏀硅繃澶氳皟鐢ㄦ柟銆?
      *
-     * @param msg 当前消息
-     * @param category 当前消息分类
-     * @param procedureId 当前流程 ID
-     * @param procedureTypeCode 当前流程类型编码
+     * @param msg 褰撳墠娑堟伅
+     * @param category 褰撳墠娑堟伅鍒嗙被
+     * @param procedureId 褰撳墠娴佺▼ ID
+     * @param procedureTypeCode 褰撳墠娴佺▼绫诲瀷缂栫爜
      */
-    public void dispatch(
+    public ProcedureDispatchOutcome dispatch(
             SignalingMessage msg,
             MessageCategory category,
             String procedureId,
             String procedureTypeCode
     ) {
+        boolean ueContextUpdated = false;
         log.info(
                 "Dispatch msg. ueId={}, msgType={}, category={}, procedureType={}, procedureId={}",
                 msg.getUeId(),
@@ -114,6 +119,7 @@ public class ProcedureDispatchService {
 
         if (shouldUpdateInitialAccessContext(category, procedureTypeCode)) {
             ueContextService.updateOnInitialAccess(msg, procedureId);
+            ueContextUpdated = true;
         }
 
         ProcedureDispatchedEvent event = new ProcedureDispatchedEvent(
@@ -132,12 +138,13 @@ public class ProcedureDispatchService {
                 "procedure-dispatch"
         );
         eventPublisher.publish(event);
+        return ProcedureDispatchOutcome.of(true, ueContextUpdated, procedureId, procedureTypeCode);
     }
 
     /**
-     * 发布一条流程分发事件。
+     * 鍙戝竷涓€鏉℃祦绋嬪垎鍙戜簨浠躲€?
      *
-     * @param context 当前主链上下文
+     * @param context 褰撳墠涓婚摼涓婁笅鏂?
      */
     private void publishDispatchEvent(MessageProcessingContext context) {
         SignalingMessage msg = context.getMessage();
@@ -162,11 +169,11 @@ public class ProcedureDispatchService {
     }
 
     /**
-     * 判断当前消息是否需要触发 IA 上下文更新。
+     * 鍒ゆ柇褰撳墠娑堟伅鏄惁闇€瑕佽Е鍙?IA 涓婁笅鏂囨洿鏂般€?
      *
-     * @param category 当前消息分类
-     * @param procedureTypeCode 当前流程类型编码
-     * @return true 表示需要更新
+     * @param category 褰撳墠娑堟伅鍒嗙被
+     * @param procedureTypeCode 褰撳墠娴佺▼绫诲瀷缂栫爜
+     * @return true 琛ㄧず闇€瑕佹洿鏂?
      */
     private boolean shouldUpdateInitialAccessContext(
             MessageCategory category,

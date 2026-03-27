@@ -1,65 +1,40 @@
 package com.example.procedure.model;
 
-import com.example.procedure.model.tree.MessageTree;
-import com.example.procedure.parser.*;
-import lombok.Data;
+import com.example.procedure.model.message.DecryptContext;
+import com.example.procedure.model.message.MessageMeta;
+import com.example.procedure.model.message.MessagePayload;
+import com.example.procedure.model.message.tree.MessageTree;
+import com.example.procedure.model.message.info.MacInfo;
+import com.example.procedure.model.message.info.NUARInfo;
+import com.example.procedure.model.message.info.NasInfo;
+import com.example.procedure.model.message.info.NgapInfo;
+import com.example.procedure.model.message.info.PdcpInfo;
+import com.example.procedure.model.message.info.RrcInfo;
 
 import java.util.List;
 
-@Data
+/**
+ * 淇′护娑堟伅涓绘ā鍨嬨€? *
+ * 褰撳墠闃舵鏄惧紡琛ラ綈鍏抽敭 getter/setter锛? * 閬垮厤涓诲共缂栬瘧缁х画鍙?Lombok 鐢熸垚宸紓褰卞搷銆? */
+/**
+ * Core signaling-message model used across the processing pipeline.
+ *
+ * This type brings together:
+ * 1. Message identity and transport metadata.
+ * 2. Parsed protocol-layer information objects.
+ * 3. Decrypt and reentry state attached during processing.
+ * 4. The optional tree-form representation built by streaming parsers.
+ */
 public class SignalingMessage {
 
     private String msgId;
-    public String getMsgId() {
-        return meta != null ? meta.getMsgId() : null;
-    }
-
-    public void setMsgId(String msgId) {
-        ensureMeta();
-        meta.setMsgId(msgId);
-    }
     private String ueId;
     private String iface;
-    public String getIface() {
-        return meta != null ? meta.getIface() : null;
-    }
-
-    public void setIface(String iface) {
-        ensureMeta();
-        meta.setIface(iface);
-    }
-
     private String direction;
-    public String getDirection() {
-        return meta != null ? meta.getDirection() : null;
-    }
-
-    public void setDirection(String direction) {
-        ensureMeta();
-        meta.setDirection(direction);
-    }
-
     private String protocolLayer;
     private String msgType;
     private long timestamp;
-    public Long getTimestamp() {
-        return meta != null ? meta.getTimestamp() : null;
-    }
-
-    public void setTimestamp(Long timestamp) {
-        ensureMeta();
-        meta.setTimestamp(timestamp);
-    }
-
     private long frameNo;
-    public Long getFrameNo() {
-        return meta != null ? meta.getFrameNo() : null;
-    }
-
-    public void setFrameNo(Long frameNo) {
-        ensureMeta();
-        meta.setFrameNo(frameNo);
-    }
 
     private MessagePayload payload;
 
@@ -71,119 +46,272 @@ public class SignalingMessage {
     private List<NasInfo> nasList;
 
     private Boolean encrypted;
+    private String encryptedType;
+    private String decryptPlainHex;
+    private String decryptMacHex;
+    private boolean decrypted;
+    private Integer decryptDepth;
+    private String decryptPath;
+    private String decryptTargetLayer;
+    private Integer decryptTargetNasIndex;
+    private String decryptTargetNodeId;
+    private String reentrySourceNodeId;
+
+    private MessageTree messageTree;
+
+    private MessageMeta meta = new MessageMeta();
+    private DecryptContext decryptContext = new DecryptContext();
+
+    public String getMsgId() {
+        return meta != null ? meta.getMsgId() : msgId;
+    }
+
+    public void setMsgId(String msgId) {
+        this.msgId = msgId;
+        ensureMeta();
+        meta.setMsgId(msgId);
+    }
+
+    public String getUeId() {
+        return ueId;
+    }
+
+    public void setUeId(String ueId) {
+        this.ueId = ueId;
+    }
+
+    public String getIface() {
+        return meta != null ? meta.getIface() : iface;
+    }
+
+    public void setIface(String iface) {
+        this.iface = iface;
+        ensureMeta();
+        meta.setIface(iface);
+    }
+
+    public String getDirection() {
+        return meta != null ? meta.getDirection() : direction;
+    }
+
+    public void setDirection(String direction) {
+        this.direction = direction;
+        ensureMeta();
+        meta.setDirection(direction);
+    }
+
+    public String getProtocolLayer() {
+        return protocolLayer;
+    }
+
+    public void setProtocolLayer(String protocolLayer) {
+        this.protocolLayer = protocolLayer;
+    }
+
+    public String getMsgType() {
+        return msgType;
+    }
+
+    public void setMsgType(String msgType) {
+        this.msgType = msgType;
+    }
+
+    public Long getTimestamp() {
+        return meta != null ? meta.getTimestamp() : timestamp;
+    }
+
+    public void setTimestamp(Long timestamp) {
+        this.timestamp = timestamp == null ? 0L : timestamp;
+        ensureMeta();
+        meta.setTimestamp(timestamp);
+    }
+
+    public Long getFrameNo() {
+        return meta != null ? meta.getFrameNo() : frameNo;
+    }
+
+    public void setFrameNo(Long frameNo) {
+        this.frameNo = frameNo == null ? 0L : frameNo;
+        ensureMeta();
+        meta.setFrameNo(frameNo);
+    }
+
+    public MessagePayload getPayload() {
+        return payload;
+    }
+
+    public void setPayload(MessagePayload payload) {
+        this.payload = payload;
+    }
+
+    public MacInfo getMacInfo() {
+        return macInfo;
+    }
+
+    public void setMacInfo(MacInfo macInfo) {
+        this.macInfo = macInfo;
+    }
+
+    public PdcpInfo getPdcpInfo() {
+        return pdcpInfo;
+    }
+
+    public void setPdcpInfo(PdcpInfo pdcpInfo) {
+        this.pdcpInfo = pdcpInfo;
+    }
+
+    public RrcInfo getRrcInfo() {
+        return rrcInfo;
+    }
+
+    public void setRrcInfo(RrcInfo rrcInfo) {
+        this.rrcInfo = rrcInfo;
+    }
+
+    public List<NgapInfo> getNgapInfoList() {
+        return ngapInfoList;
+    }
+
+    public void setNgapInfoList(List<NgapInfo> ngapInfoList) {
+        this.ngapInfoList = ngapInfoList;
+    }
+
+    public NUARInfo getNuarInfo() {
+        return nuarInfo;
+    }
+
+    public void setNuarInfo(NUARInfo nuarInfo) {
+        this.nuarInfo = nuarInfo;
+    }
+
+    public List<NasInfo> getNasList() {
+        return nasList;
+    }
+
+    public void setNasList(List<NasInfo> nasList) {
+        this.nasList = nasList;
+    }
+
     public Boolean getEncrypted() {
-        return decryptContext != null ? decryptContext.getEncrypted() : null;
+        return decryptContext != null ? decryptContext.getEncrypted() : encrypted;
     }
 
     public void setEncrypted(Boolean encrypted) {
+        this.encrypted = encrypted;
         ensureDecryptContext();
         decryptContext.setEncrypted(encrypted);
     }
 
-    private String encryptedType;
     public String getEncryptedType() {
-        return decryptContext != null ? decryptContext.getEncryptedType() : null;
+        return decryptContext != null ? decryptContext.getEncryptedType() : encryptedType;
     }
 
     public void setEncryptedType(String encryptedType) {
+        this.encryptedType = encryptedType;
         ensureDecryptContext();
         decryptContext.setEncryptedType(encryptedType);
     }
 
-    private String decryptPlainHex;
     public String getDecryptPlainHex() {
-        return decryptContext != null ? decryptContext.getDecryptPlainHex() : null;
+        return decryptContext != null ? decryptContext.getDecryptPlainHex() : decryptPlainHex;
     }
 
     public void setDecryptPlainHex(String decryptPlainHex) {
+        this.decryptPlainHex = decryptPlainHex;
         ensureDecryptContext();
         decryptContext.setDecryptPlainHex(decryptPlainHex);
     }
 
-    private String decryptMacHex;
     public String getDecryptMacHex() {
-        return decryptContext != null ? decryptContext.getDecryptMacHex() : null;
+        return decryptContext != null ? decryptContext.getDecryptMacHex() : decryptMacHex;
     }
 
     public void setDecryptMacHex(String decryptMacHex) {
+        this.decryptMacHex = decryptMacHex;
         ensureDecryptContext();
         decryptContext.setDecryptMacHex(decryptMacHex);
     }
 
-    private boolean decrypted;
+    public boolean isDecrypted() {
+        return decrypted;
+    }
 
-    private Integer decryptDepth;
+    public void setDecrypted(boolean decrypted) {
+        this.decrypted = decrypted;
+    }
+
     public Integer getDecryptDepth() {
-        return decryptContext != null ? decryptContext.getDecryptDepth() : null;
+        return decryptContext != null ? decryptContext.getDecryptDepth() : decryptDepth;
     }
 
     public void setDecryptDepth(Integer decryptDepth) {
+        this.decryptDepth = decryptDepth;
         ensureDecryptContext();
         decryptContext.setDecryptDepth(decryptDepth);
     }
 
-    private String decryptPath;
     public String getDecryptPath() {
-        return decryptContext != null ? decryptContext.getDecryptPath() : null;
+        return decryptContext != null ? decryptContext.getDecryptPath() : decryptPath;
     }
 
     public void setDecryptPath(String decryptPath) {
+        this.decryptPath = decryptPath;
         ensureDecryptContext();
         decryptContext.setDecryptPath(decryptPath);
     }
 
-    private String decryptTargetLayer;
     public String getDecryptTargetLayer() {
-        return decryptContext != null ? decryptContext.getDecryptTargetLayer() : null;
+        return decryptContext != null ? decryptContext.getDecryptTargetLayer() : decryptTargetLayer;
     }
 
     public void setDecryptTargetLayer(String decryptTargetLayer) {
+        this.decryptTargetLayer = decryptTargetLayer;
         ensureDecryptContext();
         decryptContext.setDecryptTargetLayer(decryptTargetLayer);
     }
 
-    private Integer decryptTargetNasIndex; // 兼容旧逻辑，可逐步废弃
+    public Integer getDecryptTargetNasIndex() {
+        return decryptTargetNasIndex;
+    }
 
-    /** 新增：本轮解密真正针对的原始节点 ID */
-    private String decryptTargetNodeId;
+    public void setDecryptTargetNasIndex(Integer decryptTargetNasIndex) {
+        this.decryptTargetNasIndex = decryptTargetNasIndex;
+    }
+
     public String getDecryptTargetNodeId() {
-        return decryptContext != null ? decryptContext.getDecryptTargetNodeId() : null;
+        return decryptContext != null ? decryptContext.getDecryptTargetNodeId() : decryptTargetNodeId;
     }
 
     public void setDecryptTargetNodeId(String decryptTargetNodeId) {
+        this.decryptTargetNodeId = decryptTargetNodeId;
         ensureDecryptContext();
         decryptContext.setDecryptTargetNodeId(decryptTargetNodeId);
     }
 
-    /**
-     * 新增：
-     * 回流消息来自哪个原始节点。
-     * 它不是长期业务字段，主要用于 merge/graft。
-     */
-    private String reentrySourceNodeId;
     public String getReentrySourceNodeId() {
-        return decryptContext != null ? decryptContext.getReentrySourceNodeId() : null;
+        return decryptContext != null ? decryptContext.getReentrySourceNodeId() : reentrySourceNodeId;
     }
 
     public void setReentrySourceNodeId(String reentrySourceNodeId) {
+        this.reentrySourceNodeId = reentrySourceNodeId;
         ensureDecryptContext();
         decryptContext.setReentrySourceNodeId(reentrySourceNodeId);
     }
 
-    private MessageTree messageTree;
+    public MessageTree getMessageTree() {
+        return messageTree;
+    }
 
-    /** 消息元信息 */
-    private MessageMeta meta = new MessageMeta();
-
-    /** 解密/回流上下文 */
-    private DecryptContext decryptContext = new DecryptContext();
+    public void setMessageTree(MessageTree messageTree) {
+        this.messageTree = messageTree;
+    }
 
     public MessageMeta getMeta() {
         return meta;
     }
 
     public void setMeta(MessageMeta meta) {
-        this.meta = (meta != null) ? meta : new MessageMeta();
+        this.meta = meta != null ? meta : new MessageMeta();
     }
 
     public DecryptContext getDecryptContext() {
@@ -191,7 +319,7 @@ public class SignalingMessage {
     }
 
     public void setDecryptContext(DecryptContext decryptContext) {
-        this.decryptContext = (decryptContext != null) ? decryptContext : new DecryptContext();
+        this.decryptContext = decryptContext != null ? decryptContext : new DecryptContext();
     }
 
     private void ensureMeta() {

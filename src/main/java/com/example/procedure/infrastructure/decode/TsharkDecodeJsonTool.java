@@ -1,6 +1,6 @@
 package com.example.procedure.infrastructure.decode;
 
-import com.example.procedure.wireshark.WiresharkProperties;
+import com.example.procedure.infrastructure.wireshark.WiresharkProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -14,43 +14,43 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * 基于本地 tshark 的 JSON 解码工具。
+ * 鍩轰簬鏈湴 tshark 鐨?JSON 瑙ｇ爜宸ュ叿銆?
  *
- * 当前职责：
- * 1. 校验 tshark 配置和输入文件
- * 2. 构造 tshark 命令
- * 3. 执行本地进程并返回 JSON 输出
+ * 褰撳墠鑱岃矗锛?
+ * 1. 鏍￠獙 tshark 閰嶇疆鍜岃緭鍏ユ枃浠?
+ * 2. 鏋勯€?tshark 鍛戒护
+ * 3. 鎵ц鏈湴杩涚▼骞惰繑鍥?JSON 杈撳嚭
  *
- * 这是 infrastructure.decode 包下的正式本地实现。
+ * 杩欐槸 infrastructure.decode 鍖呬笅鐨勬寮忔湰鍦板疄鐜般€?
  */
 @Component
 public class TsharkDecodeJsonTool implements DecodeJsonTool {
 
     /**
-     * 日志器。
+     * 鏃ュ織鍣ㄣ€?
      */
     private static final Logger log = LoggerFactory.getLogger(TsharkDecodeJsonTool.class);
 
     /**
-     * Wireshark 配置。
+     * Wireshark 閰嶇疆銆?
      */
     private final WiresharkProperties props;
 
     /**
-     * 构造 tshark JSON 解码工具。
+     * 鏋勯€?tshark JSON 瑙ｇ爜宸ュ叿銆?
      *
-     * @param props Wireshark 配置
+     * @param props Wireshark 閰嶇疆
      */
     public TsharkDecodeJsonTool(WiresharkProperties props) {
         this.props = props;
     }
 
     /**
-     * 一次性把 pcap 解码成 JSON 字符串。
+     * 涓€娆℃€ф妸 pcap 瑙ｇ爜鎴?JSON 瀛楃涓层€?
      *
-     * @param pcapPath pcap 文件路径
-     * @return JSON 字符串
-     * @throws Exception 解码失败时抛出异常
+     * @param pcapPath pcap 鏂囦欢璺緞
+     * @return JSON 瀛楃涓?
+     * @throws Exception 瑙ｇ爜澶辫触鏃舵姏鍑哄紓甯?
      */
     @Override
     // REFACTOR STEP: PACKAGE_REORG_INFRA_DECODE
@@ -81,11 +81,11 @@ public class TsharkDecodeJsonTool implements DecodeJsonTool {
     }
 
     /**
-     * 流式把 pcap 解码成 JSON。
+     * 娴佸紡鎶?pcap 瑙ｇ爜鎴?JSON銆?
      *
-     * @param pcapPath pcap 文件路径
-     * @param consumer JSON 输出流消费者
-     * @throws Exception 解码失败时抛出异常
+     * @param pcapPath pcap 鏂囦欢璺緞
+     * @param consumer JSON 杈撳嚭娴佹秷璐硅€?
+     * @throws Exception 瑙ｇ爜澶辫触鏃舵姏鍑哄紓甯?
      */
     @Override
     // REFACTOR STEP: PACKAGE_REORG_INFRA_DECODE
@@ -120,11 +120,33 @@ public class TsharkDecodeJsonTool implements DecodeJsonTool {
         drain.setDaemon(true);
         drain.start();
 
+        Throwable consumerFailure = null;
         try (InputStream out = process.getInputStream()) {
             consumer.accept(out);
+        } catch (Throwable t) {
+            consumerFailure = t;
         } finally {
             int code = process.waitFor();
             drain.join(2000);
+            if (consumerFailure != null) {
+                // Preserve the real downstream parsing/processing failure instead of
+                // masking it with tshark's broken-pipe style exit code.
+                if (code != 0) {
+                    log.warn(
+                            "tshark exited non-zero after downstream consumer failure. code={}, pcap={}, stderr={}",
+                            code,
+                            pcapPath,
+                            err.toString().trim()
+                    );
+                }
+                if (consumerFailure instanceof Exception exception) {
+                    throw exception;
+                }
+                throw new RuntimeException(
+                        "pcap json consumer failed for " + pcapPath,
+                        consumerFailure
+                );
+            }
             if (code != 0) {
                 throw new RuntimeException("tshark failed (exit=" + code + ")\n" + err);
             }
@@ -132,9 +154,9 @@ public class TsharkDecodeJsonTool implements DecodeJsonTool {
     }
 
     /**
-     * 校验解码输入。
+     * 鏍￠獙瑙ｇ爜杈撳叆銆?
      *
-     * @param pcapPath pcap 文件路径
+     * @param pcapPath pcap 鏂囦欢璺緞
      */
     private void validateInputs(Path pcapPath) {
         if (pcapPath == null || !Files.exists(pcapPath)) {
@@ -151,27 +173,25 @@ public class TsharkDecodeJsonTool implements DecodeJsonTool {
     }
 
     /**
-     * 应用 Wireshark 配置目录策略。
+     * 搴旂敤 Wireshark 閰嶇疆鐩綍绛栫暐銆?
      *
-     * @param pb 进程构建器
+     * @param pb 杩涚▼鏋勫缓鍣?
      */
     private void applyWiresharkConfig(ProcessBuilder pb) {
-        Path configDir = props.configDirPathOrNull();
+        Path configDir = props.activeConfigDirPathOrNull();
         if (configDir != null) {
             pb.environment().put("WIRESHARK_CONFIG_DIR", configDir.toString());
-        } else if (props.isUseIsolatedConfig()) {
-            pb.environment().put("WIRESHARK_CONFIG_DIR", props.cfgRootPath().toString());
         } else {
             pb.environment().remove("WIRESHARK_CONFIG_DIR");
         }
     }
 
     /**
-     * 构造 tshark JSON 解码命令。
+     * 鏋勯€?tshark JSON 瑙ｇ爜鍛戒护銆?
      *
-     * @param tsharkPath tshark 可执行文件路径
-     * @param pcapPath pcap 文件路径
-     * @return 命令列表
+     * @param tsharkPath tshark 鍙墽琛屾枃浠惰矾寰?
+     * @param pcapPath pcap 鏂囦欢璺緞
+     * @return 鍛戒护鍒楄〃
      */
     private List<String> buildJsonWithHexCommand(String tsharkPath, Path pcapPath) {
         List<String> cmd = new ArrayList<>();

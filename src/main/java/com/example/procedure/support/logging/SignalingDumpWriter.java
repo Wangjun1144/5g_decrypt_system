@@ -1,7 +1,6 @@
 package com.example.procedure.support.logging;
 
 import com.example.procedure.model.SignalingMessage;
-import com.example.procedure.util.SignalingMessagePrinter;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -9,21 +8,31 @@ import java.nio.file.Path;
 import java.util.Comparator;
 
 /**
- * 阶段 1：
- * 把“日志文件输出”包装成 support 层能力，
- * 避免 application 层直接依赖 util 中的打印细节。
+ * Utility for writing signaling dump logs to disk.
+ *
+ * This keeps file-oriented dump behavior out of the application and processing
+ * layers while preserving the existing log file generation semantics.
  */
 public final class SignalingDumpWriter {
 
     private SignalingDumpWriter() {
     }
 
+    /**
+     * Write one signaling message to the target dump file.
+     *
+     * @param msg signaling message to dump
+     * @param output target log file
+     * @param append whether to append to the existing file
+     */
     public static void write(SignalingMessage msg, Path output, boolean append) {
         SignalingMessagePrinter.printAndWriteToFile(msg, output, append);
     }
 
     /**
-     * 删除整个日志目录（包含目录下所有文件和子目录）。
+     * Delete a whole log directory recursively.
+     *
+     * @param logDir log directory to delete
      */
     public static void deleteLogDirectory(Path logDir) {
         if (logDir == null || Files.notExists(logDir)) {
@@ -32,16 +41,16 @@ public final class SignalingDumpWriter {
 
         try {
             Files.walk(logDir)
-                    .sorted(Comparator.reverseOrder()) // 先删文件，再删目录
+                    .sorted(Comparator.reverseOrder())
                     .forEach(path -> {
                         try {
                             Files.deleteIfExists(path);
                         } catch (IOException e) {
-                            throw new RuntimeException("删除日志文件失败: " + path, e);
+                            throw new RuntimeException("Failed to delete log file: " + path, e);
                         }
                     });
         } catch (IOException e) {
-            throw new RuntimeException("删除日志目录失败: " + logDir, e);
+            throw new RuntimeException("Failed to delete log directory: " + logDir, e);
         }
     }
 }

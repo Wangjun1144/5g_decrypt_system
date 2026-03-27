@@ -4,23 +4,29 @@ import java.nio.file.Path;
 import java.util.Set;
 
 /**
- * 新的 pcap 批处理应用入口。
+ * Application-facing entry contract for one pcap batch ingestion run.
  *
- * 设计意图：
- * 1. 这个接口代表“应用层视角”的统一处理入口
- * 2. 上层如果要触发一次完整的 pcap 批处理，应优先依赖这个接口
- * 3. 当前正式入口语义已收口为 PcapBatchProcessRequest
- *
- * 当前阶段定位：
- * - 它是第二阶段重构后的主入口接口
- * - 后续无论向流式处理、事件驱动、微服务拆分演进，都可以继续保留
+ * Upstream callers should depend on this boundary instead of directly invoking
+ * lower-level decode services. The processor coordinates one complete pcap
+ * ingestion flow from decode to message-pipeline forwarding.
  */
 public interface PcapBatchProcessor {
 
+    /**
+     * Process one application-layer pcap batch request.
+     *
+     * @param request batch process request
+     * @throws Exception when the batch run fails
+     */
     void process(PcapBatchProcessRequest request) throws Exception;
 
     /**
-     * 兼容旧的三参数调用方式。
+     * Legacy convenience overload kept for compatibility with older callers.
+     *
+     * @param pcap source pcap path
+     * @param wanted logical layers to keep
+     * @param enabledRaw raw layers that participate in strict matching
+     * @throws Exception when the batch run fails
      */
     default void process(Path pcap, Set<String> wanted, Set<String> enabledRaw) throws Exception {
         process(PcapBatchProcessRequest.of(pcap, wanted, enabledRaw));

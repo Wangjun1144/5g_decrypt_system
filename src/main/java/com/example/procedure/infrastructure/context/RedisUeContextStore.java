@@ -1,49 +1,49 @@
 package com.example.procedure.infrastructure.context;
 
-import com.example.procedure.context.UeContextRepository;
+import com.example.procedure.processing.context.UeContextRepository;
 import com.example.procedure.model.UEContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
- * 基于 Redis 的 UEContext 存储实现。
+ * 鍩轰簬 Redis 鐨?UEContext 瀛樺偍瀹炵幇銆?
  *
- * 当前定位：
- * 1. 这是 UEContext 仓储的正式基础设施实现
- * 2. 负责把 UEContext 以 JSON 形式存取到 Redis
- * 3. 业务层只依赖 UeContextRepository，不直接依赖这个实现
+ * 褰撳墠瀹氫綅锛?
+ * 1. 杩欐槸 UEContext 浠撳偍鐨勬寮忓熀纭€璁炬柦瀹炵幇
+ * 2. 璐熻矗鎶?UEContext 浠?JSON 褰㈠紡瀛樺彇鍒?Redis
+ * 3. 涓氬姟灞傚彧渚濊禆 UeContextRepository锛屼笉鐩存帴渚濊禆杩欎釜瀹炵幇
  *
- * 这样做的意义：
- * 1. 与项目当前其他 Redis 存储风格保持一致
- * 2. 避免额外要求 RedisTemplate<String, Object> Bean
- * 3. 让 context 包保留业务语义，基础设施细节放在 infrastructure.context
+ * 杩欐牱鍋氱殑鎰忎箟锛?
+ * 1. 涓庨」鐩綋鍓嶅叾浠?Redis 瀛樺偍椋庢牸淇濇寔涓€鑷?
+ * 2. 閬垮厤棰濆瑕佹眰 RedisTemplate<String, Object> Bean
+ * 3. 璁?context 鍖呬繚鐣欎笟鍔¤涔夛紝鍩虹璁炬柦缁嗚妭鏀惧湪 infrastructure.context
  */
 @Repository
 public class RedisUeContextStore implements UeContextRepository {
 
     /**
-     * Redis key 前缀。
+     * Redis key 鍓嶇紑銆?
      */
     private static final String PREFIX = "ue:ctx:";
 
     /**
-     * Redis 字符串模板。
+     * Redis 瀛楃涓叉ā鏉裤€?
      */
     // REFACTOR STEP: PACKAGE_REORG_INFRA_CONTEXT
     private final StringRedisTemplate redisTemplate;
 
     /**
-     * JSON 序列化工具。
+     * JSON 搴忓垪鍖栧伐鍏枫€?
      */
     // REFACTOR STEP: PACKAGE_REORG_INFRA_CONTEXT
     private final ObjectMapper objectMapper;
 
     /**
-     * 构造 Redis UEContext 存储实现。
+     * 鏋勯€?Redis UEContext 瀛樺偍瀹炵幇銆?
      *
-     * @param redisTemplate Redis 字符串模板
-     * @param objectMapper JSON 序列化工具
+     * @param redisTemplate Redis 瀛楃涓叉ā鏉?
+     * @param objectMapper JSON 搴忓垪鍖栧伐鍏?
      */
     public RedisUeContextStore(
             StringRedisTemplate redisTemplate,
@@ -54,10 +54,10 @@ public class RedisUeContextStore implements UeContextRepository {
     }
 
     /**
-     * 根据 UE ID 加载上下文。
+     * 鏍规嵁 UE ID 鍔犺浇涓婁笅鏂囥€?
      *
-     * @param ueId UE 标识
-     * @return UEContext；如果不存在或解析失败则返回 null
+     * @param ueId UE 鏍囪瘑
+     * @return UEContext锛涘鏋滀笉瀛樺湪鎴栬В鏋愬け璐ュ垯杩斿洖 null
      */
     @Override
     // REFACTOR STEP: PACKAGE_REORG_INFRA_CONTEXT
@@ -79,9 +79,9 @@ public class RedisUeContextStore implements UeContextRepository {
     }
 
     /**
-     * 保存 UEContext。
+     * 淇濆瓨 UEContext銆?
      *
-     * @param ctx 当前上下文
+     * @param ctx 褰撳墠涓婁笅鏂?
      */
     @Override
     // REFACTOR STEP: PACKAGE_REORG_INFRA_CONTEXT
@@ -99,9 +99,9 @@ public class RedisUeContextStore implements UeContextRepository {
     }
 
     /**
-     * 构造 Redis key。
+     * 鏋勯€?Redis key銆?
      *
-     * @param ueId UE 标识
+     * @param ueId UE 鏍囪瘑
      * @return Redis key
      */
     // REFACTOR STEP: PACKAGE_REORG_INFRA_CONTEXT

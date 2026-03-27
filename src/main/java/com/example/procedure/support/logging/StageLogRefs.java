@@ -1,7 +1,7 @@
 package com.example.procedure.support.logging;
 
 import com.example.procedure.model.SignalingMessage;
-import com.example.procedure.processing.message.MessageProcessingContext;
+import com.example.procedure.processing.message.runtime.MessageProcessingContext;
 
 import java.nio.file.Path;
 import java.util.Set;

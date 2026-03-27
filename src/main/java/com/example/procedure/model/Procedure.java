@@ -2,6 +2,12 @@ package com.example.procedure.model;
 
 import lombok.Data;
 
+/**
+ * Runtime procedure state tracked for one UE.
+ *
+ * It records the current matched procedure identity, progress position, and
+ * termination-related flags used by the procedure stage and state store.
+ */
 @Data
 public class Procedure {
     private String procedureId;
@@ -18,10 +24,11 @@ public class Procedure {
     private int lastPhaseIndex = -1;
     private int lastOrderIndex = -1;
 
-    // ===== 新增：乱序结束控制 =====
     private boolean endSeen = false;
     private long endSeenAtMs = 0L;
 
-    /** 关键消息到齐位图 */
+    /**
+     * Bit mask indicating which key messages have already been observed.
+     */
     private int keyMask = 0;
 }

@@ -2,13 +2,16 @@ package com.example.procedure.model;
 
 import lombok.Data;
 
+/**
+ * Simple score value used by procedure matching and ranking logic.
+ */
 @Data
 public class Score {
     private int score;
     private int phaseIndex;
     private int orderIndex;
 
-    public Score(int score, int phaseIndex, int orderIndex){
+    public Score(int score, int phaseIndex, int orderIndex) {
         this.score = score;
         this.phaseIndex = phaseIndex;
         this.orderIndex = orderIndex;

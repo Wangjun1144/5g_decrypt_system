@@ -1,6 +1,6 @@
 package com.example.scene.decodersystem;
 
-import com.example.procedure.decrypt.DecryptClient;
+import com.example.procedure.infrastructure.decrypt.gateway.http.DecryptClient;
 import org.junit.jupiter.api.Test;
 
 public class DecryptClientTest {
@@ -28,7 +28,7 @@ public class DecryptClientTest {
         String resp = DecryptClient.decrypt(url, req);
         System.out.println(resp);
 
-        // 可选断言：至少不是空
+        // 鍙€夋柇瑷€锛氳嚦灏戜笉鏄┖
         // org.junit.jupiter.api.Assertions.assertNotNull(resp);
         // org.junit.jupiter.api.Assertions.assertFalse(resp.trim().isEmpty());
     }

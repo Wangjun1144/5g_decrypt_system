@@ -1,44 +1,43 @@
 package com.example.scene.decodersystem;
 
 import com.example.procedure.Application;
-import com.example.procedure.streaming.layers.ChainsInspectConsumer;
-import com.example.procedure.streaming.layers.LayersSelectiveParser;
-import com.example.procedure.streaming.parser.PacketParseContext;
-import com.example.procedure.streaming.parser.RrcNasParseResult;
-import com.example.procedure.wireshark.TsharkRunner;
-import com.example.procedure.wireshark.WiresharkDecodeService;
-import com.example.procedure.wireshark.WiresharkProperties;
+import com.example.procedure.infrastructure.decode.bridge.json.PcapJsonDecodeGateway;
+import com.example.procedure.infrastructure.decode.bridge.plaintext.HexToJsonDecodeService;
+import com.example.procedure.infrastructure.wireshark.WiresharkProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
-import java.util.Set;
 
+/**
+ * Integration-style checks around Wireshark-backed decode tooling.
+ *
+ * These tests exercise decode-oriented helper flows that are still useful for
+ * offline inspection and operational troubleshooting, even though the mainline
+ * processing path has moved toward streaming parse.
+ */
 @SpringBootTest(classes = Application.class)
 class WiresharkDecodeIT {
 
     @Autowired
-    private TsharkRunner tsharkRunner;
+    private PcapJsonDecodeGateway pcapJsonDecodeGateway;
 
     @Autowired
     private WiresharkProperties props;
 
     @Autowired
-    private WiresharkDecodeService decodeService;
+    private HexToJsonDecodeService decodeService;
 
+    /**
+     * Decode one pcap file to tshark JSON and dump the result for inspection.
+     */
     @Test
     void decode_pcap_and_dump_json() throws Exception {
-        // 1) 输入 pcap（改成你实际文件名）
         Path pcap = Path.of("runtime", "rrc_user0.pcap");
-
-        // 2) 输出文件：把 tshark JSON 写出来
         Path out = Path.of("runtime", "tshark_out.json");
 
         System.out.println("=== WiresharkDecodeIT ===");
@@ -51,17 +50,14 @@ class WiresharkDecodeIT {
 
         if (!Files.exists(pcap)) {
             System.out.println("[ERROR] pcap not found: " + pcap.toAbsolutePath());
-            return; // 不抛断言，直接返回
+            return;
         }
 
-        // 3) 调 tshark
-        String json = tsharkRunner.decodeToJson(pcap);
+        String json = pcapJsonDecodeGateway.decodeToJson(pcap);
 
-        // 4) 写文件（确保目录存在）
         Files.createDirectories(out.getParent());
         Files.writeString(out, json, StandardCharsets.UTF_8);
 
-        // 5) 打印一小段到控制台（避免太大）
         int previewLen = Math.min(json.length(), 2000);
         System.out.println("---- tshark json preview (first " + previewLen + " chars) ----");
         System.out.println(json.substring(0, previewLen));
@@ -70,15 +66,13 @@ class WiresharkDecodeIT {
         System.out.println("[OK] JSON dumped to: " + out.toAbsolutePath());
     }
 
+    /**
+     * Convert plaintext hex through decode helpers and dump the resulting JSON.
+     */
     @Test
     void decode_hex_via_text2pcap_then_tshark_dump_json() throws Exception {
-        // 1) 准备输入：从文件读取 hex（推荐用文件，避免在代码里贴超长字符串）
-        // 你可以放两个文件：
-        // runtime/nas_plain.hex
-        // runtime/rrc_ul_dcch_plain.hex
         Path nasHexFile = Path.of("runtime", "nas_plain.hex");
         Path rrcHexFile = Path.of("runtime", "rrc_ul_dcch_plain.hex");
-
         Path workDir = Path.of("runtime", "wireshark_tmp");
         Files.createDirectories(workDir);
 
@@ -90,15 +84,14 @@ class WiresharkDecodeIT {
         System.out.println("tsharkPath: " + props.getTsharkPath());
         System.out.println("text2pcap : " + props.getText2pcapPath());
 
-        // ---------- NAS 测试 ----------
         if (Files.exists(nasHexFile)) {
             String nasHex = Files.readString(nasHexFile, StandardCharsets.UTF_8).trim();
 
             String nasJson = decodeService.decodeHexByMeta(
                     nasHex,
                     "NAS",
-                    null,   // NAS 不需要方向
-                    null,   // NAS 不需要 dcch/ccch
+                    null,
+                    null,
                     workDir,
                     "it_nas"
             );
@@ -117,7 +110,6 @@ class WiresharkDecodeIT {
             System.out.println("[SKIP] nas hex file not found: " + nasHexFile.toAbsolutePath());
         }
 
-        // ---------- RRC UL DCCH 测试 ----------
         if (Files.exists(rrcHexFile)) {
             String rrcHex = Files.readString(rrcHexFile, StandardCharsets.UTF_8).trim();
 
@@ -144,60 +136,4 @@ class WiresharkDecodeIT {
             System.out.println("[SKIP] rrc hex file not found: " + rrcHexFile.toAbsolutePath());
         }
     }
-
-//    @Test
-//    void contextLoads() throws Exception{
-//        String tsharkJson =
-//                """
-//                [
-//                  {
-//                    "_index": "x",
-//                    "_type": "y",
-//                    "_source": {
-//                      "layers": {
-//                        "frame": {
-//                          "frame.number": "10",
-//                          "frame.time_epoch": "1700000000.123",
-//                          "frame.protocols": "eth:ip:sctp:nas-5gs:nr-rrc"
-//                        },
-//                        "nas-5gs_raw": ["AA11"],
-//                        "nas-5gs": {"nas.msg": "first"},
-//                        "nas-5gs_raw": ["BB22"],
-//                        "nas-5gs": {"nas.msg": "second"},
-//                        "nr-rrc_raw": ["CC33"],
-//                        "nr-rrc": {"rrc.msg": "hello"}
-//                      }
-//                    }
-//                  }
-//                ]
-//                """;
-//        Path pcap = Path.of("5g_srsRAN_n78_gain40_amf.pcapng");
-//
-//        Set<String> wanted = Set.of(
-//                "nas-5gs_raw",
-//                "nas-5gs",
-//                "nr-rrc",
-//                "mac-nr",
-//                "mac-nr_raw",
-//                "ngap",
-//                "http2",
-//                "json.object"
-//
-//        );
-//
-//        // 你希望启用并严格配对抓取的 raw layer（*_raw 必须紧挨着逻辑层才会被消费）
-//        Set<String> enabledRaw = Set.of(
-//                "nas-5gs_raw",
-//                "mac-nr_raw"
-//        );
-//
-//        tsharkRunner.decodeToJsonStream(pcap, in -> {
-//            try {
-//                LayersSelectiveParser.parsePackets(in, wanted, enabledRaw, new ChainsInspectConsumer());
-//            } catch (IOException e) {
-//                throw new RuntimeException(e);
-//            }
-//        });
-//    }
-
 }

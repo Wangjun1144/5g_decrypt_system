@@ -5,49 +5,39 @@ import com.example.procedure.processing.result.ResultStatus;
 import lombok.Data;
 
 /**
- * 消息处理结果。
- *
- * 当前定位：
- * 1. 这是单条消息主链处理完成后的最终结果 DTO
- * 2. 它保留消息处理领域本身需要暴露的字段
- * 3. 同时可以转换成统一结果元数据
+ * Final result DTO produced for one signaling message after the main pipeline
+ * completes.
  */
 @Data
 public class MessageProcessingResult {
 
     /**
-     * UE 标识。
+     * UE identifier.
      */
     private String ueId;
 
     /**
-     * 消息类型。
+     * Normalized message type.
      */
     private String msgType;
 
     /**
-     * 消息分类。
+     * Message category.
      */
     private MessageCategory category;
 
     /**
-     * 匹配到的流程 ID。
+     * Matched procedure id.
      */
     private String procedureId;
 
     /**
-     * 匹配到的流程类型。
+     * Matched procedure type.
      */
     private String procedureType;
 
     /**
-     * 构造消息处理结果。
-     *
-     * @param ueId UE 标识
-     * @param msgType 消息类型
-     * @param category 消息分类
-     * @param procedureId 流程 ID
-     * @param procedureType 流程类型
+     * Create one message processing result.
      */
     public MessageProcessingResult(
             String ueId,
@@ -64,12 +54,7 @@ public class MessageProcessingResult {
     }
 
     /**
-     * 转换成统一结果元数据。
-     *
-     * 当前消息主链处理结果默认按 SUCCESS 表示，
-     * 因为更细的等待/失败语义已经在主链阶段事件中表达。
-     *
-     * @return 统一结果元数据
+     * Convert this DTO into the shared result metadata contract.
      */
     // REFACTOR STEP: RESULT_METADATA_CONTRACT
     public ResultMetadata toResultMetadata() {
@@ -81,5 +66,27 @@ public class MessageProcessingResult {
                 primaryId,
                 "msgType=" + msgType + ",category=" + category + ",procedureType=" + procedureType
         );
+    }
+
+    /**
+     * Returns whether this result is attached to a matched procedure.
+     */
+    public boolean hasMatchedProcedure() {
+        return procedureId != null && !procedureId.isBlank();
+    }
+
+    /**
+     * Returns whether the message category belongs to procedure processing.
+     */
+    public boolean isProcedureMessage() {
+        return category == MessageCategory.PROCEDURE_DRIVING
+                || category == MessageCategory.PROCEDURE_AUX;
+    }
+
+    /**
+     * Returns the primary identifier that should represent this result externally.
+     */
+    public String primaryReferenceId() {
+        return hasMatchedProcedure() ? procedureId : ueId;
     }
 }

@@ -1,20 +1,18 @@
 package com.example.scene.decodersystem;
 
 import com.example.procedure.Application;
+import com.example.procedure.application.message.MessageApplicationService;
+import com.example.procedure.application.message.SignalingMessagePipeline;
+import com.example.procedure.application.pcap.PcapBatchProcessRequest;
 import com.example.procedure.application.pcap.PcapBatchProcessor;
+import com.example.procedure.model.initialaccess.*;
 import com.example.procedure.model.*;
-import com.example.procedure.rule.UeIdBinder;
-import com.example.procedure.initial_acess.*;
-import com.example.procedure.parser.TsharkJsonMessageParser;
-import com.example.procedure.service.MsgProcessing_Service;
-import com.example.procedure.model.ProcedureTypeEnum;
-import com.example.procedure.service.PcapBatchProcessingService;
-import com.example.procedure.streaming.layers.ChainsInspectConsumer;
-import com.example.procedure.streaming.layers.LayersSelectiveParser;
-import com.example.procedure.util.SignalingMessagePrinter;
-import com.example.procedure.wireshark.TsharkRunner;
-import org.junit.jupiter.api.Test;
+import com.example.procedure.model.message.MessagePayload;
+import com.example.procedure.infrastructure.parser.TsharkJsonMessageParser;
+import com.example.procedure.infrastructure.parser.streaming.layers.LayersSelectiveParser;
+import com.example.procedure.infrastructure.parser.streaming.layers.StreamingMessageEmitter;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -25,23 +23,28 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
-import com.example.procedure.application.pcap.PcapBatchProcessRequest;
-import com.example.procedure.application.pcap.PcapBatchProcessor;
 
-
+/**
+ * Broad scene-style tests around message processing, initial-access
+ * progression, and pcap replay entry paths.
+ *
+ * This class still behaves more like an integration-style scenario suite than
+ * a narrow unit test class, so this cleanup keeps its current shape and
+ * focuses on readability rather than structural rewrites.
+ */
 @SpringBootTest(classes = Application.class)
 class MessageProcessingServiceTests {
 
     @Autowired
-    private MsgProcessing_Service messageProcessingService;
+    private MessageApplicationService messageApplicationService;
     @Autowired
-    private UeIdBinder ueIdBinder;
+    private SignalingMessagePipeline signalingMessagePipeline;
 
     @Autowired
     private PcapBatchProcessor pcapBatchProcessor;
 
 
-    // ====== 通用构造器 ======
+    // ====== Common message builders ======
     private SignalingMessage buildMsg(String ueId,
                                       String iface,
                                       String direction,
@@ -60,13 +63,13 @@ class MessageProcessingServiceTests {
         return msg;
     }
 
-    // ====== 针对 IA 关键消息的便捷构造 ======
+    // ====== Convenience builders for initial-access-driving messages ======
 
     /** RRCSetupComplete + Registration request + IMSI + C-RNTI */
     private SignalingMessage rrcSetupCompleteStart(String ueId) {
         RrcSetupCompletePayload pl = new RrcSetupCompletePayload();
         pl.setHasRegistrationRequest(true);
-        pl.setImsi(ueId);          // 测试里假定 ueId = IMSI
+        pl.setImsi(ueId);          // 娴嬭瘯閲屽亣瀹?ueId = IMSI
         pl.setCrnti("0x1234");
 
         return buildMsg(
@@ -112,7 +115,7 @@ class MessageProcessingServiceTests {
         );
     }
 
-    /** NAS SecurityModeCommand + NAS enc/int 算法 */
+    /** NAS SecurityModeCommand + NAS enc/int 绠楁硶 */
     private SignalingMessage nasSmc(String ueId) {
         NasSecurityModeCommandPayload pl = new NasSecurityModeCommandPayload();
         pl.setNasEncAlg("NEA2");
@@ -143,7 +146,7 @@ class MessageProcessingServiceTests {
         );
     }
 
-    /** RRC SecurityModeCommand + RRC/UP enc/int 算法 */
+    /** RRC SecurityModeCommand + RRC/UP enc/int 绠楁硶 */
     private SignalingMessage rrcSmc(String ueId) {
         RrcSecurityModeCommandPayload pl = new RrcSecurityModeCommandPayload();
         pl.setRrcEncAlg("RRC-NEA2");
@@ -161,7 +164,7 @@ class MessageProcessingServiceTests {
         );
     }
 
-    /** RRCReconfiguration + DRB UP 安全配置 */
+    /** RRCReconfiguration + DRB UP 瀹夊叏閰嶇疆 */
     private SignalingMessage rrcReconfiguration(String ueId) {
         RrcReconfigurationPayload pl = new RrcReconfigurationPayload();
         pl.setHasDrbSecurityConfig(true);
@@ -178,7 +181,7 @@ class MessageProcessingServiceTests {
         );
     }
 
-    /** 任意一条结束 IA 的信令，比如 Registration Complete */
+    /** 浠绘剰涓€鏉＄粨鏉?IA 鐨勪俊浠わ紝姣斿 Registration Complete */
     private SignalingMessage iaEndMsg(String ueId) {
         return buildMsg(
                 ueId,
@@ -190,7 +193,7 @@ class MessageProcessingServiceTests {
         );
     }
 
-    /** 一个完全无关的消息，用来测试非流程场景 */
+    /** 涓€涓畬鍏ㄦ棤鍏崇殑娑堟伅锛岀敤鏉ユ祴璇曢潪娴佺▼鍦烘櫙 */
     private SignalingMessage unrelatedMsg(String ueId) {
         return buildMsg(
                 ueId,
@@ -202,7 +205,7 @@ class MessageProcessingServiceTests {
         );
     }
 
-    // ====== 一些辅助断言方法（根据你的 MessageProcessingResult 调整 getter 名称） ======
+    // ====== Helper assertions and scenario utilities ======
 
     private void assertNewIaProcedure(MessageProcessingResult r) {
         assertNotNull(r, "result should not be null");
@@ -225,100 +228,100 @@ class MessageProcessingServiceTests {
     }
 
     // ==========================
-    //      测试用例开始
+    //      Scenario tests
     // ==========================
 
     @Test
-    @DisplayName("完整的 IA 正常流程：从 RRCSetupComplete 到 RRCReconfiguration + 结束信令")
+    @DisplayName("瀹屾暣鐨?IA 姝ｅ父娴佺▼锛氫粠 RRCSetupComplete 鍒?RRCReconfiguration + 缁撴潫淇′护")
     void testInitialAccessHappyPath() {
         String ueId = "460011234567899";
 
-        // 0. RRCSetupComplete + Registration request（阶段0起始）
+        // 0. RRCSetupComplete + Registration request锛堥樁娈?璧峰锛?
         MessageProcessingResult r0 =
-                messageProcessingService.process(rrcSetupCompleteStart(ueId));
+                messageApplicationService.process(rrcSetupCompleteStart(ueId));
         System.out.println("Step0 = " + r0);
         assertNewIaProcedure(r0);
 
-        // 1. Initial UE Message（阶段1起始）
+        // 1. Initial UE Message锛堥樁娈?璧峰锛?
         MessageProcessingResult r1 =
-                messageProcessingService.process(initialUeMessageStart(ueId));
+                messageApplicationService.process(initialUeMessageStart(ueId));
         System.out.println("Step1 = " + r1);
         assertSameProcedure(r0, r1);
 
-        // 2. Nausf_UEAuthentication_Authenticate Response（阶段2起始）
+        // 2. Nausf_UEAuthentication_Authenticate Response锛堥樁娈?璧峰锛?
         MessageProcessingResult r2 =
-                messageProcessingService.process(nausfAuthResp(ueId));
+                messageApplicationService.process(nausfAuthResp(ueId));
         System.out.println("Step2 = " + r2);
         assertSameProcedure(r0, r2);
 
-        // 3. NAS SecurityModeCommand（阶段3起始）
+        // 3. NAS SecurityModeCommand锛堥樁娈?璧峰锛?
         MessageProcessingResult r3 =
-                messageProcessingService.process(nasSmc(ueId));
+                messageApplicationService.process(nasSmc(ueId));
         System.out.println("Step3 = " + r3);
         assertSameProcedure(r0, r3);
 
-        // 4. Initial Context Setup Request（阶段4起始）
+        // 4. Initial Context Setup Request锛堥樁娈?璧峰锛?
         MessageProcessingResult r4 =
-                messageProcessingService.process(initialContextSetupReq(ueId));
+                messageApplicationService.process(initialContextSetupReq(ueId));
         System.out.println("Step4 = " + r4);
         assertSameProcedure(r0, r4);
 
-        // 5. RRC SecurityModeCommand（阶段5起始）
+        // 5. RRC SecurityModeCommand锛堥樁娈?璧峰锛?
         MessageProcessingResult r5 =
-                messageProcessingService.process(rrcSmc(ueId));
+                messageApplicationService.process(rrcSmc(ueId));
         System.out.println("Step5 = " + r5);
         assertSameProcedure(r0, r5);
 
-        // 6. RRCReconfiguration（阶段6起始）
+        // 6. RRCReconfiguration锛堥樁娈?璧峰锛?
         MessageProcessingResult r6 =
-                messageProcessingService.process(rrcReconfiguration(ueId));
+                messageApplicationService.process(rrcReconfiguration(ueId));
         System.out.println("Step6 = " + r6);
         assertSameProcedure(r0, r6);
 
-        // 7. 任意结束信令（Registration Complete / RRCReconfigurationComplete 等）
+        // 7. 浠绘剰缁撴潫淇′护锛圧egistration Complete / RRCReconfigurationComplete 绛夛級
         MessageProcessingResult r7 =
-                messageProcessingService.process(iaEndMsg(ueId));
+                messageApplicationService.process(iaEndMsg(ueId));
         System.out.println("Step7(end) = " + r7);
-        // 这里你可以根据实现判断：可能仍返回同一个 procedureId，也可能标记已经归档
+        // 杩欓噷浣犲彲浠ユ牴鎹疄鐜板垽鏂細鍙兘浠嶈繑鍥炲悓涓€涓?procedureId锛屼篃鍙兘鏍囪宸茬粡褰掓。
     }
 
     @Test
-    @DisplayName("RRCSetupComplete 没有负载/关键字段时不应启动 IA 流程")
+    @DisplayName("RRCSetupComplete 娌℃湁璐熻浇/鍏抽敭瀛楁鏃朵笉搴斿惎鍔?IA 娴佺▼")
     void testRrcSetupCompleteWithoutPayloadShouldNotStartIa() {
         String ueId = "460011234567800";
 
-        // 没有 payload，或 payload.hasRegistrationRequest=false
+        // 娌℃湁 payload锛屾垨 payload.hasRegistrationRequest=false
         SignalingMessage msg = buildMsg(
                 ueId, "Uu", "UL", "RRC",
                 "RRCSetupComplete", null
         );
 
         MessageProcessingResult r =
-                messageProcessingService.process(msg);
+                messageApplicationService.process(msg);
         System.out.println("RRCSetupComplete without payload = " + r);
 
-        // 预期：要么被当作非流程消息，要么至少不能创建 IA 流程
-        // 下面两行按你具体实现二选一：
+        // 棰勬湡锛氳涔堣褰撲綔闈炴祦绋嬫秷鎭紝瑕佷箞鑷冲皯涓嶈兘鍒涘缓 IA 娴佺▼
+        // 涓嬮潰涓よ鎸変綘鍏蜂綋瀹炵幇浜岄€変竴锛?
         // assertNonProcedure(r);
         assertNotEquals(ProcedureTypeEnum.INITIAL_ACCESS, r.getProcedureType(),
                 "should NOT start IA when payload is missing");
     }
 
     @Test
-    @DisplayName("Initial UE Message 缺少关键字段时不能推动阶段前进")
+    @DisplayName("initial ue message should ignore incomplete payload")
     void testInitialUeMessageMissingFields() {
         String ueId = "460011234567801";
 
-        // 先用正常的 RRCSetupComplete 启动 IA
+        // 鍏堢敤姝ｅ父鐨?RRCSetupComplete 鍚姩 IA
         MessageProcessingResult r0 =
-                messageProcessingService.process(rrcSetupCompleteStart(ueId));
+                messageApplicationService.process(rrcSetupCompleteStart(ueId));
         assertNewIaProcedure(r0);
 
-        // 构造一个 payload 不完整的 Initial UE Message（例如没有 NCGI）
+        // 鏋勯€犱竴涓?payload 涓嶅畬鏁寸殑 Initial UE Message锛堜緥濡傛病鏈?NCGI锛?
         NgapInitialUeMessagePayload pl = new NgapInitialUeMessagePayload();
         pl.setHasRegistrationRequest(true);
         pl.setRanUeNgapId("RAN-UE-1");
-        pl.setNcgi(null);  // 故意缺失
+        pl.setNcgi(null);  // 鏁呮剰缂哄け
 
         SignalingMessage badInitialUe = buildMsg(
                 ueId, "N2", "UL", "NGAP",
@@ -326,39 +329,39 @@ class MessageProcessingServiceTests {
         );
 
         MessageProcessingResult r1 =
-                messageProcessingService.process(badInitialUe);
+                messageApplicationService.process(badInitialUe);
         System.out.println("Bad Initial UE Message = " + r1);
 
-        // 预期：不会新建一个 IA 流程，也不会被当成“phase1 起始”
+        // 棰勬湡锛氫笉浼氭柊寤轰竴涓?IA 娴佺▼锛屼篃涓嶄細琚綋鎴愨€減hase1 璧峰鈥?
         assertSame(r0.getProcedureId(), r1.getProcedureId(),
                 "should still attach to existing procedure, or be treated as aux");
-        // 如果你在 hasValidPayloadForPhaseStart 里直接返回 false，则不会将阶段推进
-        // 这里可以根据需要，增加对 phaseIndex 的断言（如果对外可见的话）
+        // 濡傛灉浣犲湪 hasValidPayloadForPhaseStart 閲岀洿鎺ヨ繑鍥?false锛屽垯涓嶄細灏嗛樁娈垫帹杩?
+        // 杩欓噷鍙互鏍规嵁闇€瑕侊紝澧炲姞瀵?phaseIndex 鐨勬柇瑷€锛堝鏋滃澶栧彲瑙佺殑璇濓級
     }
 
     @Test
-    @DisplayName("完全无关的消息应当被标记为非流程消息")
+    @DisplayName("瀹屽叏鏃犲叧鐨勬秷鎭簲褰撹鏍囪涓洪潪娴佺▼娑堟伅")
     void testNonProcedureMsg() {
         String ueId = "460011234567900";
 
         MessageProcessingResult r =
-                messageProcessingService.process(unrelatedMsg(ueId));
+                messageApplicationService.process(unrelatedMsg(ueId));
         System.out.println("Non-procedure = " + r);
 
-        // 如果你的实现对“完全不在 Driving/Aux 集合的消息”返回非流程：
+        // 濡傛灉浣犵殑瀹炵幇瀵光€滃畬鍏ㄤ笉鍦?Driving/Aux 闆嗗悎鐨勬秷鎭€濊繑鍥為潪娴佺▼锛?
         // assertNonProcedure(r);
     }
 
     @Test
-    @DisplayName("两个不同 UE 的 IA 流程应当产生不同的 procedureId")
+    @DisplayName("涓や釜涓嶅悓 UE 鐨?IA 娴佺▼搴斿綋浜х敓涓嶅悓鐨?procedureId")
     void testDifferentUeHaveDifferentIa() {
         String ue1 = "460011234567811";
         String ue2 = "460011234567822";
 
         MessageProcessingResult r1 =
-                messageProcessingService.process(rrcSetupCompleteStart(ue1));
+                messageApplicationService.process(rrcSetupCompleteStart(ue1));
         MessageProcessingResult r2 =
-                messageProcessingService.process(rrcSetupCompleteStart(ue2));
+                messageApplicationService.process(rrcSetupCompleteStart(ue2));
 
         System.out.println("UE1 IA = " + r1);
         System.out.println("UE2 IA = " + r2);
@@ -370,51 +373,41 @@ class MessageProcessingServiceTests {
     }
 
     @Test
-    @DisplayName("同一 UE 出现两条并发 IA 起始信令，只应保留一个主流程（视你的策略而定）")
+    @DisplayName("same ue should not start duplicate initial access procedures")
     void testConcurrentIaStartForSameUe() {
         String ueId = "460011234567833";
 
-        // 第一条 IA 起始
+        // 绗竴鏉?IA 璧峰
         MessageProcessingResult r1 =
-                messageProcessingService.process(rrcSetupCompleteStart(ueId));
-        // 第二条 IA 起始（比如重传 / 重复）
+                messageApplicationService.process(rrcSetupCompleteStart(ueId));
+        // 绗簩鏉?IA 璧峰锛堟瘮濡傞噸浼?/ 閲嶅锛?
         MessageProcessingResult r2 =
-                messageProcessingService.process(rrcSetupCompleteStart(ueId));
+                messageApplicationService.process(rrcSetupCompleteStart(ueId));
 
         System.out.println("IA start #1 = " + r1);
         System.out.println("IA start #2 = " + r2);
 
-        // 这里根据你的策略，可能是：
-        // - 第一次 newProcedure=true，第二次仍然挂在同一个 procedureId 上（new=false）
-        // 下面是一个示例断言，按需要调整：
+        // 杩欓噷鏍规嵁浣犵殑绛栫暐锛屽彲鑳芥槸锛?
+        // - 绗竴娆?newProcedure=true锛岀浜屾浠嶇劧鎸傚湪鍚屼竴涓?procedureId 涓婏紙new=false锛?
+        // 涓嬮潰鏄竴涓ず渚嬫柇瑷€锛屾寜闇€瑕佽皟鏁达細
         assertEquals(r1.getProcedureId(), r2.getProcedureId(),
                 "duplicate IA start should not create multiple procedures for same UE");
     }
 
     private void replayMessages(List<SignalingMessage> messages) {
-        int idx = 0;
         for (SignalingMessage msg : messages) {
-            idx++;
-
-            ueIdBinder.handle(msg, m -> {
-                MessageProcessingResult result = messageProcessingService.process(m);
-
-                SignalingMessagePrinter.printAndWriteToFile(
-                        m,
-                        Paths.get("logs/signaling_dump.log"),
-                        true
-                );
-            });
+            // Replay uses the same formal ingress pipeline as production sources.
+            signalingMessagePipeline.process(msg);
         }
 
     }
 
     @Test
-    @DisplayName("用解析后的 SignalingMessage 列表驱动 IA 流程回放")
+    @DisplayName("鐢ㄨВ鏋愬悗鐨?SignalingMessage 鍒楄〃椹卞姩 IA 娴佺▼鍥炴斁")
     void testReplayParsedMessages() throws IOException {
         TsharkJsonMessageParser parser = new TsharkJsonMessageParser();
 
-        // TODO: 这里把路径改成你实际的 logic/raw json 路径
+        // TODO: 杩欓噷鎶婅矾寰勬敼鎴愪綘瀹為檯鐨?logic/raw json 璺緞
         String gnbPath  = "gnb_capture.json";
         String gnbPath_raw = "gnb_capture_raw.json";
         String corePath = "5g_srsRAN_n78_gain40_amf.json";
@@ -426,17 +419,14 @@ class MessageProcessingServiceTests {
 
         System.out.println("Merged message count = " + merged.size());
 
-        // 逐条喂进 MsgProcessing_Service
+        // 閫愭潯鍠傝繘 MsgProcessing_Service
         replayMessages(merged);
 
-        // 如果你想加断言，比如至少产生一个 IA 流程，可以在这里操作：
-        // 目前 MessageProcessingResult 是 process 时返回的，
-        // 你可以在 replayMessages 里改成收集到一个 List<MessageProcessingResult> 再返回，
-        // 然后在这里做各种 assert。
+        // 濡傛灉浣犳兂鍔犳柇瑷€锛屾瘮濡傝嚦灏戜骇鐢熶竴涓?IA 娴佺▼锛屽彲浠ュ湪杩欓噷鎿嶄綔锛?
+        // 鐩墠 MessageProcessingResult 鏄?process 鏃惰繑鍥炵殑锛?
+        // 浣犲彲浠ュ湪 replayMessages 閲屾敼鎴愭敹闆嗗埌涓€涓?List<MessageProcessingResult> 鍐嶈繑鍥烇紝
+        // 鐒跺悗鍦ㄨ繖閲屽仛鍚勭 assert銆?
     }
-
-    @Autowired
-    private TsharkRunner tsharkRunner;
 
     @Test
     void contextLoads() throws Exception {
@@ -458,7 +448,7 @@ class MessageProcessingServiceTests {
                 "mac-nr_raw"
         );
 
-        // 直接走正式入口服务
+        // 鐩存帴璧版寮忓叆鍙ｆ湇鍔?
         PcapBatchProcessRequest request1 =
                 PcapBatchProcessRequest.of(pcap, wanted, enabledRaw);
         pcapBatchProcessor.process(request1);

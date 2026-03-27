@@ -1,7 +1,7 @@
 package com.example.scene.decodersystem;
 
 import com.example.procedure.Application;
-import com.example.procedure.wireshark.TsharkRunner;
+import com.example.procedure.infrastructure.decode.bridge.json.PcapJsonDecodeGateway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -14,28 +14,29 @@ import java.nio.file.Path;
 class PcapDecodeToJsonIT {
 
     @Autowired
-    private TsharkRunner tsharkRunner;
+    // REFACTOR STEP: WIRESHARK_PACKAGE_PRUNE
+    private PcapJsonDecodeGateway pcapJsonDecodeGateway;
 
     @Test
     void decode_existing_pcap_to_json() throws Exception {
-        // 1) 输入：替换成你的 pcap 文件路径（建议放 src/test/resources 里）
+        // 1) 杈撳叆锛氭浛鎹㈡垚浣犵殑 pcap 鏂囦欢璺緞锛堝缓璁斁 src/test/resources 閲岋級
         Path pcapPath = Path.of("5g_srsRAN_n78_gain40_amf.pcapng");
         if (!Files.exists(pcapPath)) {
             throw new IllegalArgumentException("pcap file not found: " + pcapPath.toAbsolutePath());
         }
 
-        // 2) 工作目录（生成 json）
+        // 2) 宸ヤ綔鐩綍锛堢敓鎴?json锛?
         Path workDir = Path.of("runtime", "wireshark_tmp");
         Files.createDirectories(workDir);
 
-        // 文件名前缀（便于多次跑）
+        // 鏂囦欢鍚嶅墠缂€锛堜究浜庡娆¤窇锛?
         String base = "pcap_decode5g_" + System.currentTimeMillis();
         Path jsonFile = workDir.resolve(base + ".json");
 
-        // 3) tshark 解码成 JSON（-T json -x）
-        String json = tsharkRunner.decodeToJson(pcapPath);
+        // 3) tshark 瑙ｇ爜鎴?JSON锛?T json -x锛?
+        String json = pcapJsonDecodeGateway.decodeToJson(pcapPath);
 
-        // 4) 输出 JSON 文件 + 控制台预览
+        // 4) 杈撳嚭 JSON 鏂囦欢 + 鎺у埗鍙伴瑙?
         Files.writeString(jsonFile, json, StandardCharsets.UTF_8);
 
         System.out.println("=== PCAP decode done ===");

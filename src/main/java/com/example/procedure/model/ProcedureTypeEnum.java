@@ -1,14 +1,18 @@
 package com.example.procedure.model;
 
+/**
+ * Canonical procedure type codes used across recognition, scoring, and state
+ * tracking.
+ */
 public enum ProcedureTypeEnum {
-    INITIAL_ACCESS("IA", "初始接入流程"),
-    SERVICE_REQUEST("SR", "业务请求流程"),
-    XN_HANDOVER("XHO", "Xn 切换"),
-    N2_HANDOVER("N2H", "N2 切换"),
-    RRC_REESTABLISH("RRE", "RRC 重建/恢复"),
-    GNBCUINTERNAL_HANDOVER("GCI", "gNB-CU 内部切换"),
-    RRCSTATE_TRANSFER("RST", "RRC 状态迁移"),
-    UNKNOWN("UNK", "未知流程");
+    INITIAL_ACCESS("IA", "Initial access"),
+    SERVICE_REQUEST("SR", "Service request"),
+    XN_HANDOVER("XHO", "Xn handover"),
+    N2_HANDOVER("N2H", "N2 handover"),
+    RRC_REESTABLISH("RRE", "RRC re-establish or resume"),
+    GNBCUINTERNAL_HANDOVER("GCI", "gNB-CU internal handover"),
+    RRCSTATE_TRANSFER("RST", "RRC state transfer"),
+    UNKNOWN("UNK", "Unknown procedure");
 
     private final String code;
     private final String desc;
@@ -31,11 +35,10 @@ public enum ProcedureTypeEnum {
             return UNKNOWN;
         }
         for (ProcedureTypeEnum e : ProcedureTypeEnum.values()) {
-            if (e.code.equals(code)) {   // 直接比较内部字段 code
+            if (e.code.equals(code)) {
                 return e;
             }
         }
         return UNKNOWN;
     }
 }
-

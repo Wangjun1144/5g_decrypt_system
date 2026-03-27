@@ -1,6 +1,6 @@
 package com.example.scene.decodersystem;
 
-import com.example.procedure.context.UeContextService;
+import com.example.procedure.processing.context.UeContextService;
 import com.example.procedure.model.MessageCategory;
 import com.example.procedure.model.SignalingMessage;
 import com.example.procedure.processing.dispatch.ProcedureDispatchService;
@@ -13,15 +13,15 @@ import org.mockito.MockitoAnnotations;
 import static org.mockito.Mockito.*;
 
 /**
- * ProcedureDispatchService 的最小行为测试。
+ * ProcedureDispatchService 鐨勬渶灏忚涓烘祴璇曘€?
  *
- * 当前关注点：
- * 1. IA + PROCEDURE_DRIVING 时，应触发 UEContext 更新
- * 2. 非 IA 流程时，不应触发 IA 上下文更新
- * 3. 非流程驱动消息时，不应触发 IA 上下文更新
+ * 褰撳墠鍏虫敞鐐癸細
+ * 1. IA + PROCEDURE_DRIVING 鏃讹紝搴旇Е鍙?UEContext 鏇存柊
+ * 2. 闈?IA 娴佺▼鏃讹紝涓嶅簲瑙﹀彂 IA 涓婁笅鏂囨洿鏂?
+ * 3. 闈炴祦绋嬮┍鍔ㄦ秷鎭椂锛屼笉搴旇Е鍙?IA 涓婁笅鏂囨洿鏂?
  *
- * 这组测试的目标不是验证完整业务规则，
- * 而是验证“新的流程分发边界”已经真正承接旧行为。
+ * 杩欑粍娴嬭瘯鐨勭洰鏍囦笉鏄獙璇佸畬鏁翠笟鍔¤鍒欙紝
+ * 鑰屾槸楠岃瘉鈥滄柊鐨勬祦绋嬪垎鍙戣竟鐣屸€濆凡缁忕湡姝ｆ壙鎺ユ棫琛屼负銆?
  */
 class ProcedureDispatchServiceTests {
 
@@ -49,7 +49,7 @@ class ProcedureDispatchServiceTests {
 //    }
 
 //    @Test
-//    @DisplayName("IA 流程驱动消息应触发 UE 上下文更新")
+//    @DisplayName("IA 娴佺▼椹卞姩娑堟伅搴旇Е鍙?UE 涓婁笅鏂囨洿鏂?)
 //    void dispatchShouldUpdateContextForInitialAccessProcedureDrivingMessage() {
 //        SignalingMessage msg = buildMessage();
 //
@@ -65,7 +65,7 @@ class ProcedureDispatchServiceTests {
 //    }
 
 //    @Test
-//    @DisplayName("非 IA 流程不应触发 Initial Access 上下文更新")
+//    @DisplayName("闈?IA 娴佺▼涓嶅簲瑙﹀彂 Initial Access 涓婁笅鏂囨洿鏂?)
 //    void dispatchShouldNotUpdateContextForNonInitialAccessProcedure() {
 //        SignalingMessage msg = buildMessage();
 //
@@ -80,7 +80,7 @@ class ProcedureDispatchServiceTests {
 //    }
 //
 //    @Test
-//    @DisplayName("非流程驱动消息不应触发 Initial Access 上下文更新")
+//    @DisplayName("闈炴祦绋嬮┍鍔ㄦ秷鎭笉搴旇Е鍙?Initial Access 涓婁笅鏂囨洿鏂?)
 //    void dispatchShouldNotUpdateContextForNonProcedureDrivingMessage() {
 //        SignalingMessage msg = buildMessage();
 //

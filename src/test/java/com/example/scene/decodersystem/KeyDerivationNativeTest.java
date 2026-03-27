@@ -1,29 +1,28 @@
 package com.example.scene.decodersystem;
 
 import com.example.procedure.Application;
-import com.example.procedure.keyderivation.KeyDerivationNative;
-import com.example.procedure.service.ProClassify_Service;
+import com.example.procedure.infrastructure.security.keyderivation.KeyDerivationNative;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
- * 用于测试 ProClassify_Service 的简单 DEMO 测试类
+ * 鐢ㄤ簬娴嬭瘯 ProClassify_Service 鐨勭畝鍗?DEMO 娴嬭瘯绫?
  */
 @SpringBootTest(classes = Application.class)
 class KeyDerivationNativeTest {
-    // 这里的几个常量需要你自己根据 constant_key_derivation.h 里的枚举值修改
-    // ================== TODO: 根据 C++ 枚举实际数值改 ==================
-    /** 对应 C++ 的 algorithm_type_distinguisher::N_NAS_ENC_ALG */
-    private static final int ALG_TYPE_N_NAS_ENC_ALG = 1;   // TODO: 改成真实值
+    // 杩欓噷鐨勫嚑涓父閲忛渶瑕佷綘鑷繁鏍规嵁 constant_key_derivation.h 閲岀殑鏋氫妇鍊间慨鏀?
+    // ================== TODO: 鏍规嵁 C++ 鏋氫妇瀹為檯鏁板€兼敼 ==================
+    /** 瀵瑰簲 C++ 鐨?algorithm_type_distinguisher::N_NAS_ENC_ALG */
+    private static final int ALG_TYPE_N_NAS_ENC_ALG = 1;   // TODO: 鏀规垚鐪熷疄鍊?
 
-    /** 对应 C++ 的 algorithm_identity::NEA1_NIA1 */
-    private static final int ALG_ID_NEA1_NIA1 = 1;         // TODO: 改成真实值
+    /** 瀵瑰簲 C++ 鐨?algorithm_identity::NEA1_NIA1 */
+    private static final int ALG_ID_NEA1_NIA1 = 1;         // TODO: 鏀规垚鐪熷疄鍊?
 
-    /** 对应 C++ 的 access_type_distinguisher::KgNB */
-    private static final int ACCESS_TYPE_KGNB = 1;         // TODO: 改成真实值
+    /** 瀵瑰簲 C++ 鐨?access_type_distinguisher::KgNB */
+    private static final int ACCESS_TYPE_KGNB = 1;         // TODO: 鏀规垚鐪熷疄鍊?
 
-    /** 对应 C++ 的 Direction::DIRECTION_DL */
-    private static final int DIRECTION_DL = 1;             // TODO: 改成真实值
+    /** 瀵瑰簲 C++ 鐨?Direction::DIRECTION_DL */
+    private static final int DIRECTION_DL = 1;             // TODO: 鏀规垚鐪熷疄鍊?
     // ===================================================================
 
     @Test
@@ -41,8 +40,8 @@ class KeyDerivationNativeTest {
         // ========== 2. Testing derive KAMF from KSEAF... ==========
         System.out.println("Testing derive KAMF from KSEAF...");
         String supi = "001010000000001";
-        // 这里直接用上一步得到的 kseaf
-        byte[] abba = new byte[]{0x00, 0x00}; // C++ 里 ABBA[] = {0x00, 0x00}
+        // 杩欓噷鐩存帴鐢ㄤ笂涓€姝ュ緱鍒扮殑 kseaf
+        byte[] abba = new byte[]{0x00, 0x00}; // C++ 閲?ABBA[] = {0x00, 0x00}
         String kamf = KeyDerivationNative.kamfFromKseaf(supi, abba, kseaf);
         System.out.println("KAMF: " + kamf);
         System.out.println("// correct KAMF: 26E1FC1550C96063B33847E9F2AFC85CC05A2FA9A7F902BCD46C9FCA1C2DEC7E");
@@ -50,7 +49,7 @@ class KeyDerivationNativeTest {
 
         // ========== 3. Testing derive algorithm key from KAMF/KgNB... ==========
         System.out.println("Testing derive algorithm key from KAMF/KgNB...");
-        // C++: std::string KAMF_KgNB = result2.out_key; 也就是 KAMF
+        // C++: std::string KAMF_KgNB = result2.out_key; 涔熷氨鏄?KAMF
         String kamfKgNb = kamf;
         int algTypeDist = ALG_TYPE_N_NAS_ENC_ALG;  // C++: N_NAS_ENC_ALG
         int algIdentity = ALG_ID_NEA1_NIA1;        // C++: NEA1_NIA1
@@ -80,7 +79,7 @@ class KeyDerivationNativeTest {
 
         // ========== 5. Testing derive NH from KAMF... ==========
         System.out.println("Testing derive NH from KAMF...");
-        // C++: std::string SYNC = result4.out_key; 也就是上一步 KgNB
+        // C++: std::string SYNC = result4.out_key; 涔熷氨鏄笂涓€姝?KgNB
         String sync = kgNb;
         String nh = KeyDerivationNative.nhFromKamf(sync, kamf);
         System.out.println("NH: " + nh);
@@ -89,8 +88,8 @@ class KeyDerivationNativeTest {
 
         // ========== 6. Testing derive KngRANStar from KgNB... ==========
         System.out.println("Testing derive KngRANStar from KgNB...");
-        // C++: std::string KgNB = result5.out_key; 这里他们把 NH 当成 KgNB 变量用了
-        // 也就是说 KngRANStar 的输入是 NH，这里照抄 C++ 逻辑
+        // C++: std::string KgNB = result5.out_key; 杩欓噷浠栦滑鎶?NH 褰撴垚 KgNB 鍙橀噺鐢ㄤ簡
+        // 涔熷氨鏄 KngRANStar 鐨勮緭鍏ユ槸 NH锛岃繖閲岀収鎶?C++ 閫昏緫
         String kgNbForKngRanStar = nh;
         int pci = 0x0800;                   // u16 PCI = 0x0800;
         String arfcnDl = "00001388";        // std::string ARFCN_DL = "00001388";

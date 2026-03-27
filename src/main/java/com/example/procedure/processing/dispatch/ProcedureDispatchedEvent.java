@@ -1,6 +1,6 @@
 package com.example.procedure.processing.dispatch;
 
-import com.example.procedure.application.message.MessageSourceType;
+import com.example.procedure.model.message.MessageSourceType;
 import com.example.procedure.model.MessageCategory;
 
 import java.util.UUID;

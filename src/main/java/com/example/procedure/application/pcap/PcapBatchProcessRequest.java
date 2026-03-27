@@ -6,50 +6,60 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * pcap 批处理请求。
+ * Application-layer request for one pcap batch ingestion run.
  *
- * 当前用途：
- * - 统一承接 pcap 批处理入口参数
- * - 让应用层入口不再依赖松散的位置参数
- *
- * 后续演进：
- * - 可继续补充 traceId、sourceName、decodeProfile、decryptEnabled 等字段
- * - 可直接作为 API 入参模型、任务模型或事件负载模型
+ * It carries the source pcap together with the logical layers that should be
+ * preserved and the raw layers that should participate in strict sibling
+ * matching during downstream streaming decode.
  */
 public class PcapBatchProcessRequest {
 
     private final Path pcap;
-    private final Set<String> wanted;
-    private final Set<String> enabledRaw;
+    private final Set<String> wantedLayers;
+    private final Set<String> enabledRawLayers;
 
     public PcapBatchProcessRequest(
             Path pcap,
-            Set<String> wanted,
-            Set<String> enabledRaw
+            Set<String> wantedLayers,
+            Set<String> enabledRawLayers
     ) {
         this.pcap = pcap;
-        this.wanted = immutableCopy(wanted);
-        this.enabledRaw = immutableCopy(enabledRaw);
+        this.wantedLayers = immutableCopy(wantedLayers);
+        this.enabledRawLayers = immutableCopy(enabledRawLayers);
     }
 
     public static PcapBatchProcessRequest of(
             Path pcap,
-            Set<String> wanted,
-            Set<String> enabledRaw
+            Set<String> wantedLayers,
+            Set<String> enabledRawLayers
     ) {
-        return new PcapBatchProcessRequest(pcap, wanted, enabledRaw);
+        return new PcapBatchProcessRequest(pcap, wantedLayers, enabledRawLayers);
     }
 
     public Path getPcap() {
         return pcap;
     }
 
-    public Set<String> getWanted() {
-        return wanted;
+    public Set<String> getWantedLayers() {
+        return wantedLayers;
     }
 
+    public Set<String> getEnabledRawLayers() {
+        return enabledRawLayers;
+    }
+
+    /**
+     * Legacy alias kept for compatibility with existing callers.
+     */
+    public Set<String> getWanted() {
+        return getWantedLayers();
+    }
+
+    /**
+     * Legacy alias kept for compatibility with existing callers.
+     */
     public Set<String> getEnabledRaw() {
-        return enabledRaw;
+        return getEnabledRawLayers();
     }
 
     private static Set<String> immutableCopy(Set<String> source) {
