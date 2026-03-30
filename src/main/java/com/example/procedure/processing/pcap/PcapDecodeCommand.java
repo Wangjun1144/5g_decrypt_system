@@ -1,4 +1,4 @@
-package com.example.procedure.infrastructure.decode.bridge.pcap;
+package com.example.procedure.processing.pcap;
 
 import com.example.procedure.model.SignalingMessage;
 
@@ -9,20 +9,16 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 /**
- * Request contract for streaming pcap decode.
- *
- * It carries the source pcap, the logical layers that should produce chain
- * results, the raw layers that should participate in strict sibling matching,
- * and the downstream signaling-message sink.
+ * Internal command that describes one pcap decode request for the processing boundary.
  */
-public class PcapDecodeRequest {
+public class PcapDecodeCommand {
 
     private final Path pcap;
     private final Set<String> wantedLayers;
     private final Set<String> enabledRawLayers;
     private final Consumer<SignalingMessage> messageConsumer;
 
-    public PcapDecodeRequest(
+    public PcapDecodeCommand(
             Path pcap,
             Set<String> wantedLayers,
             Set<String> enabledRawLayers,
@@ -34,13 +30,13 @@ public class PcapDecodeRequest {
         this.messageConsumer = messageConsumer;
     }
 
-    public static PcapDecodeRequest of(
+    public static PcapDecodeCommand of(
             Path pcap,
             Set<String> wantedLayers,
             Set<String> enabledRawLayers,
             Consumer<SignalingMessage> messageConsumer
     ) {
-        return new PcapDecodeRequest(pcap, wantedLayers, enabledRawLayers, messageConsumer);
+        return new PcapDecodeCommand(pcap, wantedLayers, enabledRawLayers, messageConsumer);
     }
 
     public Path getPcap() {
@@ -53,20 +49,6 @@ public class PcapDecodeRequest {
 
     public Set<String> getEnabledRawLayers() {
         return enabledRawLayers;
-    }
-
-    /**
-     * Legacy alias kept for compatibility with older callers.
-     */
-    public Set<String> getWanted() {
-        return getWantedLayers();
-    }
-
-    /**
-     * Legacy alias kept for compatibility with older callers.
-     */
-    public Set<String> getEnabledRaw() {
-        return getEnabledRawLayers();
     }
 
     public Consumer<SignalingMessage> getMessageConsumer() {

@@ -1,18 +1,21 @@
 package com.example.scene.decodersystem;
 
-
 import com.example.procedure.Application;
 import com.example.procedure.support.logging.SignalingDumpWriter;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.nio.file.Paths;
 
 @SpringBootTest(classes = Application.class)
-public class RedisConnectionTest {
+@ActiveProfiles("test")
+@RequiresRedis
+class RedisConnectionTest {
 
     @Autowired
     private RedisConnectionFactory connectionFactory;
@@ -21,33 +24,30 @@ public class RedisConnectionTest {
     private StringRedisTemplate redisTemplate;
 
     @Test
-    public void testRedisConnection() {
+    void testRedisConnection() {
+        var connection = connectionFactory.getConnection();
         try {
-            // 直接用底层连接验证
-            var connection = connectionFactory.getConnection();
-            System.out.println("✅ Redis 连接成功: " + connection.ping());
-            connection.close();
-
-            // 也可以用 RedisTemplate 简单写入/读取
+            System.out.println("Redis connection succeeded: " + connection.ping());
             redisTemplate.opsForValue().set("connect:test", "ok");
             String result = redisTemplate.opsForValue().get("connect:test");
-            System.out.println("✅ Redis 写入/读取成功: " + result);
-        } catch (Exception e) {
-            System.err.println("❌ Redis 连接失败: " + e.getMessage());
+            System.out.println("Redis write/read succeeded: " + result);
+        } finally {
+            connection.close();
         }
     }
 
     /**
-     * ⚠️ 注意：会清空当前 Redis 实例所有 DB，慎用
+     * This is a destructive integration test and only runs when explicitly enabled.
      */
     @Test
-    public void testFlushAllRedis() {
+    @EnabledIfSystemProperty(named = "test.redis.flush.enabled", matches = "true")
+    void testFlushAllRedis() {
         var connection = connectionFactory.getConnection();
         try {
             connection.serverCommands().flushAll();
-            System.out.println("✅ 已执行 FLUSHALL，清空所有 Redis 数据库");
+            System.out.println("Executed FLUSHALL and cleared the connected Redis instance.");
             SignalingDumpWriter.deleteLogDirectory(Paths.get("logs"));
-            System.out.println("✅ 已删除 logs 日志目录");
+            System.out.println("Deleted the logs directory.");
         } finally {
             connection.close();
         }

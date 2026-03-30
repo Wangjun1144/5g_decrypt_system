@@ -48,14 +48,14 @@ public class MessageApplicationService {
      * Convenience adapter for callers that only have an application ingress request.
      */
     public MessageProcessingResult process(SignalingMessageIngressRequest request) {
-        return process(MessageProcessingRequest.fromIngressRequest(request));
+        return process(toProcessingRequest(request));
     }
 
     /**
      * Convenience adapter for callers that want a typed application outcome from ingress data.
      */
     public MessageApplicationOutcome processDetailed(SignalingMessageIngressRequest request) {
-        return processDetailed(MessageProcessingRequest.fromIngressRequest(request));
+        return processDetailed(toProcessingRequest(request));
     }
 
     /**
@@ -70,5 +70,18 @@ public class MessageApplicationService {
      */
     public MessageApplicationOutcome processDetailed(SignalingMessage msg) {
         return processDetailed(MessageProcessingRequest.of(msg));
+    }
+
+    /**
+     * Maps one application ingress request into the internal processing request shape.
+     */
+    private MessageProcessingRequest toProcessingRequest(SignalingMessageIngressRequest request) {
+        return new MessageProcessingRequest(
+                request.getMessage(),
+                request.getSourceType(),
+                request.getSourceName(),
+                request.getCorrelationId(),
+                request.isReentry()
+        );
     }
 }

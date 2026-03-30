@@ -55,7 +55,7 @@ public class MessageDecryptFlow {
             reporter.publishStageEvent(context, "message-decrypt-skip");
 
             log.debug("Message stage[decrypt] skipped-early-exit: {}, enc={}, encType={}, correlationId={}, reentry={}",
-                    StageLogRefs.context(context),
+                    StageLogRefs.message(context.getMessage()),
                     context.isEncrypted(),
                     StageLogRefs.safe(context.getEncryptedType()),
                     context.getCorrelationId(),
@@ -66,7 +66,7 @@ public class MessageDecryptFlow {
         reporter.publishStageEvent(context, "message-decrypt-result");
 
         log.debug("Message stage[decrypt] result: {}, encType={}, status={}, reason={}, error={}, correlationId={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 StageLogRefs.safe(context.getEncryptedType()),
                 decryptResult.getStatus(),
                 decryptResult.getReason(),
@@ -103,13 +103,13 @@ public class MessageDecryptFlow {
         reporter.publishStageEvent(context, "message-decrypt-success");
 
         log.debug("Message stage[decrypt-success] handled: {}, reentered={}, correlationId={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 reentered,
                 context.getCorrelationId());
 
         if (reentered) {
             log.info("Message main-chain reenter: {}, correlationId={}, sourceType={}",
-                    StageLogRefs.context(context),
+                    StageLogRefs.message(context.getMessage()),
                     context.getCorrelationId(),
                     context.getSourceType());
 
@@ -154,7 +154,7 @@ public class MessageDecryptFlow {
         reporter.publishPendingEnqueuedEvent(context, decryptResult);
 
         log.info("Message pending-enqueue: {}, encType={}, reason={}, correlationId={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 StageLogRefs.safe(context.getEncryptedType()),
                 decryptResult.getReason(),
                 context.getCorrelationId());

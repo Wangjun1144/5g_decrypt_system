@@ -1,9 +1,9 @@
 /**
- * Wireshark configuration and initialization support.
+ * Wireshark-specific infrastructure support.
  *
- * The concrete decode and build tools already live under
- * {@code infrastructure.decode}. This package remains as a thin home for
- * Wireshark-specific properties and profile bootstrapping.
+ * This package owns local toolchain configuration, profile preparation and
+ * startup-time verification for tshark/text2pcap. Concrete decode and build
+ * adapters continue to live under {@code infrastructure.decode}, while this
+ * package keeps the local Wireshark runtime contract stable and observable.
  */
-// REFACTOR STEP: WIRESHARK_ROLE_CONSOLIDATION
 package com.example.procedure.infrastructure.wireshark;

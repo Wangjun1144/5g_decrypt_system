@@ -1,7 +1,7 @@
 package com.example.procedure.processing.context;
 
-import com.example.procedure.processing.result.ResultMetadata;
-import com.example.procedure.processing.result.ResultStatus;
+import com.example.procedure.model.result.ResultMetadata;
+import com.example.procedure.model.result.ResultStatus;
 
 /**
  * UEContext 鏇存柊缁撴灉銆?

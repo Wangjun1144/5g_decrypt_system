@@ -1,5 +1,6 @@
 package com.example.procedure.infrastructure.decode.bridge.pcap;
 
+import com.example.procedure.processing.pcap.PcapDecodeCommand;
 import org.springframework.stereotype.Service;
 
 /**
@@ -16,7 +17,7 @@ public class PcapParseBridgeServiceImpl implements PcapParseBridgeService {
     }
 
     @Override
-    public void parse(PcapDecodeRequest request) throws Exception {
+    public void parse(PcapDecodeCommand request) throws Exception {
         pcapDecodeGateway.decode(request);
     }
 }

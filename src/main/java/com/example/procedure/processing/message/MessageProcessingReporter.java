@@ -73,7 +73,7 @@ public class MessageProcessingReporter {
      */
     public void logMainEntry(MessageProcessingContext context) {
         log.debug("Message main-chain enter: {}, enc={}, encType={}, sourceType={}, sourceName={}, correlationId={}, reentry={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 context.isEncrypted(),
                 StageLogRefs.safe(context.getEncryptedType()),
                 context.getSourceType(),
@@ -89,7 +89,7 @@ public class MessageProcessingReporter {
         MessageProcessingSummary summary = resultAssembler.summarize(result);
 
         log.debug("Message main-chain early-return: {}, {}, correlationId={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 summary.toLogString(),
                 context.getCorrelationId());
     }
@@ -101,7 +101,7 @@ public class MessageProcessingReporter {
         MessageProcessingSummary summary = resultAssembler.summarize(result);
 
         log.debug("Message main-chain exit: {}, {}, correlationId={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 summary.toLogString(),
                 context.getCorrelationId());
     }

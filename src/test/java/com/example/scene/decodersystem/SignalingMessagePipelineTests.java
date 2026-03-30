@@ -86,7 +86,13 @@ class SignalingMessagePipelineTests {
                 .thenAnswer(invocation -> {
                     SignalingMessageIngressRequest request = invocation.getArgument(0);
                     return MessageApplicationOutcome.of(
-                            MessageProcessingRequest.fromIngressRequest(request),
+                            new MessageProcessingRequest(
+                                    request.getMessage(),
+                                    request.getSourceType(),
+                                    request.getSourceName(),
+                                    request.getCorrelationId(),
+                                    request.isReentry()
+                            ),
                             null
                     );
                 });
@@ -138,7 +144,13 @@ class SignalingMessagePipelineTests {
                 .thenAnswer(invocation -> {
                     SignalingMessageIngressRequest request = invocation.getArgument(0);
                     return MessageApplicationOutcome.of(
-                            MessageProcessingRequest.fromIngressRequest(request),
+                            new MessageProcessingRequest(
+                                    request.getMessage(),
+                                    request.getSourceType(),
+                                    request.getSourceName(),
+                                    request.getCorrelationId(),
+                                    request.isReentry()
+                            ),
                             null
                     );
                 });

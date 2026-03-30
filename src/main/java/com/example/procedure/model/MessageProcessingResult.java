@@ -1,7 +1,7 @@
 package com.example.procedure.model;
 
-import com.example.procedure.processing.result.ResultMetadata;
-import com.example.procedure.processing.result.ResultStatus;
+import com.example.procedure.model.result.ResultMetadata;
+import com.example.procedure.model.result.ResultStatus;
 import lombok.Data;
 
 /**

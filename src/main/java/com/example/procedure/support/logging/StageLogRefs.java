@@ -1,7 +1,6 @@
 package com.example.procedure.support.logging;
 
 import com.example.procedure.model.SignalingMessage;
-import com.example.procedure.processing.message.runtime.MessageProcessingContext;
 
 import java.nio.file.Path;
 import java.util.Set;
@@ -46,13 +45,6 @@ public final class StageLogRefs {
     /**
      * 基于处理上下文生成消息引用文本。
      */
-    public static String context(MessageProcessingContext context) {
-        if (context == null) {
-            return "context:null";
-        }
-        return message(context.getMessage());
-    }
-
     /**
      * 安全输出 pcap 路径。
      */

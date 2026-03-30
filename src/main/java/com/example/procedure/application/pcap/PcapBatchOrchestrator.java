@@ -4,9 +4,9 @@ import com.example.procedure.application.ApplicationStageErrors;
 import com.example.procedure.application.ApplicationStageException;
 import com.example.procedure.application.message.SignalingMessageIngressRequest;
 import com.example.procedure.application.message.SignalingMessagePipeline;
-import com.example.procedure.infrastructure.decode.bridge.pcap.PcapDecodeRequest;
-import com.example.procedure.infrastructure.decode.bridge.pcap.PcapParseBridgeService;
 import com.example.procedure.model.SignalingMessage;
+import com.example.procedure.processing.pcap.PcapDecodeCommand;
+import com.example.procedure.processing.pcap.PcapDecodePort;
 import com.example.procedure.support.logging.StageLogRefs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,7 +30,7 @@ public class PcapBatchOrchestrator implements PcapBatchProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(PcapBatchOrchestrator.class);
 
-    private final PcapParseBridgeService pcapParseBridgeService;
+    private final PcapDecodePort pcapDecodePort;
     private final SignalingMessagePipeline signalingMessagePipeline;
 
     /**
@@ -40,10 +40,10 @@ public class PcapBatchOrchestrator implements PcapBatchProcessor {
      * @param signalingMessagePipeline application pipeline for one signaling message
      */
     public PcapBatchOrchestrator(
-            PcapParseBridgeService pcapParseBridgeService,
+            PcapDecodePort pcapDecodePort,
             SignalingMessagePipeline signalingMessagePipeline
     ) {
-        this.pcapParseBridgeService = pcapParseBridgeService;
+        this.pcapDecodePort = pcapDecodePort;
         this.signalingMessagePipeline = signalingMessagePipeline;
     }
 
@@ -85,8 +85,8 @@ public class PcapBatchOrchestrator implements PcapBatchProcessor {
                 StageLogRefs.size(enabledRaw));
 
         try {
-            pcapParseBridgeService.parse(
-                    PcapDecodeRequest.of(pcap, wanted, enabledRaw, sink)
+            pcapDecodePort.parse(
+                    PcapDecodeCommand.of(pcap, wanted, enabledRaw, sink)
             );
 
             log.debug("Pcap stage[decode-stream] exit: pcap={}", StageLogRefs.pcap(pcap));

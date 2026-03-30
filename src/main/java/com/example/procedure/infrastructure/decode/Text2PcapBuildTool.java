@@ -9,43 +9,27 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * 鍩轰簬鏈湴 text2pcap 鐨?pcap 鏋勫缓宸ュ叿銆?
- *
- * 褰撳墠鑱岃矗锛?
- * 1. 鏍￠獙 text2pcap 閰嶇疆
- * 2. 璋冪敤鏈湴 text2pcap 杩涚▼
- * 3. 鐢熸垚鐩爣 pcap 鏂囦欢
- *
- * 杩欐槸 infrastructure.decode 鍖呬笅鐨勬寮忔湰鍦板疄鐜般€?
+ * Runs text2pcap to build a pcap file from a plaintext hexdump.
  */
 @Component
 public class Text2PcapBuildTool implements PcapBuildTool {
 
     /**
-     * Wireshark 閰嶇疆銆?
+     * Wireshark configuration used to resolve the local text2pcap executable.
      */
     private final WiresharkProperties props;
 
     /**
-     * 鏋勯€?text2pcap 鏋勫缓宸ュ叿銆?
-     *
-     * @param props Wireshark 閰嶇疆
+     * Creates a text2pcap-backed pcap builder.
      */
     public Text2PcapBuildTool(WiresharkProperties props) {
         this.props = props;
     }
 
     /**
-     * 鏍规嵁 hexdump 鏋勫缓 pcap銆?
-     *
-     * @param hexdumpFile hexdump 鏂囦欢
-     * @param dlt DLT 绫诲瀷
-     * @param outPcap 杈撳嚭 pcap 鏂囦欢
-     * @return 杈撳嚭 pcap 鏂囦欢璺緞
-     * @throws Exception 鏋勫缓澶辫触鏃舵姏鍑哄紓甯?
+     * Builds a pcap file from a text2pcap-compatible hexdump file.
      */
     @Override
-    // REFACTOR STEP: PACKAGE_REORG_INFRA_DECODE
     public Path buildPcap(Path hexdumpFile, int dlt, Path outPcap) throws Exception {
         if (hexdumpFile == null || !Files.exists(hexdumpFile)) {
             throw new IllegalArgumentException("hexdump file not found: " + hexdumpFile);
@@ -54,18 +38,21 @@ public class Text2PcapBuildTool implements PcapBuildTool {
             throw new IllegalArgumentException("outPcap must not be null");
         }
 
-        Files.createDirectories(outPcap.getParent());
+        Path outputParent = outPcap.toAbsolutePath().normalize().getParent();
+        if (outputParent != null) {
+            Files.createDirectories(outputParent);
+        }
 
-        String exe = props.getText2pcapPath();
-        if (exe == null || exe.isBlank()) {
+        Path executable = props.text2pcapPathOrNull();
+        if (executable == null) {
             throw new IllegalStateException("wireshark.text2pcapPath is empty");
         }
-        if (!Files.exists(Path.of(exe))) {
-            throw new IllegalStateException("text2pcap.exe not found: " + exe);
+        if (!Files.exists(executable)) {
+            throw new IllegalStateException("text2pcap.exe not found: " + executable);
         }
 
         ProcessBuilder pb = new ProcessBuilder(List.of(
-                exe,
+                executable.toString(),
                 "-l",
                 String.valueOf(dlt),
                 hexdumpFile.toString(),

@@ -48,7 +48,7 @@ public class MessageRetryTrigger {
         UEContext refreshedContext = ueContextService.getContext(msg.getUeId());
 
         log.debug("Message stage[pending-retry] start: {}, hasRefreshedContext={}, correlationId={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 refreshedContext != null,
                 context.getCorrelationId());
 
@@ -61,7 +61,7 @@ public class MessageRetryTrigger {
         reporter.publishStageEvent(context, "message-pending-retry");
 
         log.debug("Message stage[pending-retry] done: {}, refreshedContext={}, hasBatch={}, correlationId={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 refreshedContext != null,
                 batchResult != null,
                 context.getCorrelationId());

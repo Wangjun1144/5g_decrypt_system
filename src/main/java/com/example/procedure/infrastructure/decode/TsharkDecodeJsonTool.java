@@ -14,46 +14,32 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * 鍩轰簬鏈湴 tshark 鐨?JSON 瑙ｇ爜宸ュ叿銆?
- *
- * 褰撳墠鑱岃矗锛?
- * 1. 鏍￠獙 tshark 閰嶇疆鍜岃緭鍏ユ枃浠?
- * 2. 鏋勯€?tshark 鍛戒护
- * 3. 鎵ц鏈湴杩涚▼骞惰繑鍥?JSON 杈撳嚭
- *
- * 杩欐槸 infrastructure.decode 鍖呬笅鐨勬寮忔湰鍦板疄鐜般€?
+ * Runs tshark and exposes packet JSON either as a full string or as a stream.
  */
 @Component
 public class TsharkDecodeJsonTool implements DecodeJsonTool {
 
     /**
-     * 鏃ュ織鍣ㄣ€?
+     * Logger for tshark execution and diagnostics.
      */
     private static final Logger log = LoggerFactory.getLogger(TsharkDecodeJsonTool.class);
 
     /**
-     * Wireshark 閰嶇疆銆?
+     * Wireshark configuration shared by profile initialization and process execution.
      */
     private final WiresharkProperties props;
 
     /**
-     * 鏋勯€?tshark JSON 瑙ｇ爜宸ュ叿銆?
-     *
-     * @param props Wireshark 閰嶇疆
+     * Creates a tshark-backed JSON decode tool.
      */
     public TsharkDecodeJsonTool(WiresharkProperties props) {
         this.props = props;
     }
 
     /**
-     * 涓€娆℃€ф妸 pcap 瑙ｇ爜鎴?JSON 瀛楃涓层€?
-     *
-     * @param pcapPath pcap 鏂囦欢璺緞
-     * @return JSON 瀛楃涓?
-     * @throws Exception 瑙ｇ爜澶辫触鏃舵姏鍑哄紓甯?
+     * Fully decodes a pcap file to a JSON string.
      */
     @Override
-    // REFACTOR STEP: PACKAGE_REORG_INFRA_DECODE
     public String decodeToJson(Path pcapPath) throws Exception {
         validateInputs(pcapPath);
 
@@ -81,14 +67,9 @@ public class TsharkDecodeJsonTool implements DecodeJsonTool {
     }
 
     /**
-     * 娴佸紡鎶?pcap 瑙ｇ爜鎴?JSON銆?
-     *
-     * @param pcapPath pcap 鏂囦欢璺緞
-     * @param consumer JSON 杈撳嚭娴佹秷璐硅€?
-     * @throws Exception 瑙ｇ爜澶辫触鏃舵姏鍑哄紓甯?
+     * Streams tshark JSON output to a downstream consumer.
      */
     @Override
-    // REFACTOR STEP: PACKAGE_REORG_INFRA_DECODE
     public void decodeToJsonStream(Path pcapPath, Consumer<InputStream> consumer) throws Exception {
         validateInputs(pcapPath);
 
@@ -154,9 +135,7 @@ public class TsharkDecodeJsonTool implements DecodeJsonTool {
     }
 
     /**
-     * 鏍￠獙瑙ｇ爜杈撳叆銆?
-     *
-     * @param pcapPath pcap 鏂囦欢璺緞
+     * Validates the pcap path and tshark executable before spawning a process.
      */
     private void validateInputs(Path pcapPath) {
         if (pcapPath == null || !Files.exists(pcapPath)) {
@@ -173,9 +152,7 @@ public class TsharkDecodeJsonTool implements DecodeJsonTool {
     }
 
     /**
-     * 搴旂敤 Wireshark 閰嶇疆鐩綍绛栫暐銆?
-     *
-     * @param pb 杩涚▼鏋勫缓鍣?
+     * Applies the effective Wireshark config directory to the spawned process.
      */
     private void applyWiresharkConfig(ProcessBuilder pb) {
         Path configDir = props.activeConfigDirPathOrNull();
@@ -187,11 +164,7 @@ public class TsharkDecodeJsonTool implements DecodeJsonTool {
     }
 
     /**
-     * 鏋勯€?tshark JSON 瑙ｇ爜鍛戒护銆?
-     *
-     * @param tsharkPath tshark 鍙墽琛屾枃浠惰矾寰?
-     * @param pcapPath pcap 鏂囦欢璺緞
-     * @return 鍛戒护鍒楄〃
+     * Builds the tshark command used for JSON plus hex export.
      */
     private List<String> buildJsonWithHexCommand(String tsharkPath, Path pcapPath) {
         List<String> cmd = new ArrayList<>();

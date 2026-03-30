@@ -52,6 +52,16 @@ public class WiresharkProperties {
     private boolean enableTlsDecryption = false;
 
     /**
+     * Whether to verify the local Wireshark toolchain during application startup.
+     */
+    private boolean verifyOnStartup = true;
+
+    /**
+     * Whether startup should fail when the Wireshark toolchain is invalid.
+     */
+    private boolean failFastOnInvalidToolchain = false;
+
+    /**
      * Optional explicit override for {@code WIRESHARK_CONFIG_DIR}.
      */
     private String configDir;
@@ -67,6 +77,20 @@ public class WiresharkProperties {
         return Paths.get(configDir).toAbsolutePath().normalize();
     }
 
+    public Path tsharkPathOrNull() {
+        if (tsharkPath == null || tsharkPath.isBlank()) {
+            return null;
+        }
+        return Paths.get(tsharkPath).toAbsolutePath().normalize();
+    }
+
+    public Path text2pcapPathOrNull() {
+        if (text2pcapPath == null || text2pcapPath.isBlank()) {
+            return null;
+        }
+        return Paths.get(text2pcapPath).toAbsolutePath().normalize();
+    }
+
     /**
      * Resolves the actual Wireshark config directory used by both profile initialization
      * and tshark process execution.
@@ -80,5 +104,27 @@ public class WiresharkProperties {
             return cfgRootPath();
         }
         return null;
+    }
+
+    /**
+     * Resolves the profile directory used by tshark when a config directory is active.
+     */
+    public Path activeProfileDirPathOrNull() {
+        Path configDirPath = activeConfigDirPathOrNull();
+        if (configDirPath == null) {
+            return null;
+        }
+        return configDirPath.resolve("profiles").resolve(profileName);
+    }
+
+    /**
+     * Resolves the generated {@code user_dlts} file when a profile directory is active.
+     */
+    public Path userDltsFilePathOrNull() {
+        Path profileDir = activeProfileDirPathOrNull();
+        if (profileDir == null) {
+            return null;
+        }
+        return profileDir.resolve("user_dlts");
     }
 }

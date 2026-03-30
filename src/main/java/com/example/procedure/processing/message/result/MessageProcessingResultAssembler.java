@@ -3,7 +3,7 @@ package com.example.procedure.processing.message.result;
 import com.example.procedure.model.MessageProcessingResult;
 import com.example.procedure.model.SignalingMessage;
 import com.example.procedure.processing.message.runtime.MessageProcessingContext;
-import com.example.procedure.processing.result.ResultMetadata;
+import com.example.procedure.model.result.ResultMetadata;
 import org.springframework.stereotype.Component;
 
 /**

@@ -1,7 +1,7 @@
 package com.example.procedure.processing.message.result;
 
 import com.example.procedure.model.MessageCategory;
-import com.example.procedure.processing.result.ResultMetadata;
+import com.example.procedure.model.result.ResultMetadata;
 import com.example.procedure.support.logging.StageLogRefs;
 
 /**

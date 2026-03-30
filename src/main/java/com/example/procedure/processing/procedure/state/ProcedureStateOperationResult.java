@@ -1,7 +1,7 @@
 package com.example.procedure.processing.procedure.state;
 
-import com.example.procedure.processing.result.ResultMetadata;
-import com.example.procedure.processing.result.ResultStatus;
+import com.example.procedure.model.result.ResultMetadata;
+import com.example.procedure.model.result.ResultStatus;
 
 /**
  * 流程状态操作结果。

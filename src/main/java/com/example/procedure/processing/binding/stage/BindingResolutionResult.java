@@ -1,8 +1,8 @@
 package com.example.procedure.processing.binding.stage;
 
 import com.example.procedure.model.SignalingMessage;
-import com.example.procedure.processing.result.ResultMetadata;
-import com.example.procedure.processing.result.ResultStatus;
+import com.example.procedure.model.result.ResultMetadata;
+import com.example.procedure.model.result.ResultStatus;
 
 import java.util.ArrayList;
 import java.util.Collections;

@@ -106,7 +106,7 @@ public class MessageProcessingCoordinator {
         reporter.publishStageEvent(context, "message-classification");
 
         log.debug("Message stage[classification] done: {}, category={}, sourceType={}, correlationId={}, reentry={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 outcome.getCategory(),
                 context.getSourceType(),
                 context.getCorrelationId(),
@@ -124,7 +124,7 @@ public class MessageProcessingCoordinator {
         reporter.publishStageEvent(context, "message-load-ue-context");
 
         log.debug("Message stage[load-ue-context] done: {}, hasContext={}, correlationId={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 context.hasUeContext(),
                 context.getCorrelationId());
     }
@@ -138,7 +138,7 @@ public class MessageProcessingCoordinator {
         reporter.publishStageEvent(context, "message-procedure");
 
         log.debug("Message stage[procedure] done: {}, category={}, procedureMessage={}, hasMatch={}, dispatched={}, procedureId={}, procedureType={}, correlationId={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 context.getCategory(),
                 outcome.isProcedureMessage(),
                 outcome.hasMatchResult(),
@@ -155,7 +155,7 @@ public class MessageProcessingCoordinator {
         MessageRetryOutcome retryOutcome = messageRetryTrigger.trigger(context, this::process);
 
         log.debug("Message stage[pending-retry-outcome] done: {}, refreshedContext={}, hasBatch={}, correlationId={}",
-                StageLogRefs.context(context),
+                StageLogRefs.message(context.getMessage()),
                 retryOutcome.hasRefreshedContext(),
                 retryOutcome.hasBatchResult(),
                 context.getCorrelationId());

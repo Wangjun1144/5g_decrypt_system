@@ -2,6 +2,7 @@ package com.example.procedure.infrastructure.decode.bridge.pcap;
 
 import com.example.procedure.infrastructure.decode.TsharkDecodeJsonTool;
 import com.example.procedure.infrastructure.parser.streaming.StreamingSignalingMessageParser;
+import com.example.procedure.processing.pcap.PcapDecodeCommand;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -23,7 +24,7 @@ public class TsharkPcapDecodeGateway implements PcapDecodeGateway {
     }
 
     @Override
-    public void decode(PcapDecodeRequest request) throws Exception {
+    public void decode(PcapDecodeCommand request) throws Exception {
         validateRequest(request);
 
         decoder.decodeToJsonStream(request.getPcap(), in -> {
@@ -43,7 +44,7 @@ public class TsharkPcapDecodeGateway implements PcapDecodeGateway {
         });
     }
 
-    private void validateRequest(PcapDecodeRequest request) {
+    private void validateRequest(PcapDecodeCommand request) {
         Objects.requireNonNull(request, "request must not be null");
         Objects.requireNonNull(request.getPcap(), "pcap must not be null");
         Objects.requireNonNull(request.getWantedLayers(), "wantedLayers must not be null");

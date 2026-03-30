@@ -1,4 +1,4 @@
-package com.example.procedure.processing.result;
+package com.example.procedure.model.result;
 
 /**
  * Normalized status values for high-level result summaries.

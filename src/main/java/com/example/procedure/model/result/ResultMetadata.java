@@ -1,4 +1,4 @@
-package com.example.procedure.processing.result;
+package com.example.procedure.model.result;
 
 /**
  * Shared lightweight result contract for logs, events, and high-level
