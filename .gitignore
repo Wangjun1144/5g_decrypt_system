@@ -51,3 +51,33 @@ git
 json*
 runtime/
 runtime/
+
+# generated native build outputs
+*.dll
+*.so
+*.dylib
+*.o
+*.obj
+*.a
+*.lib
+*.exp
+*.pdb
+link.log
+native/ws-core/build-*/
+native/ws-core/build-link/
+native/ws-core/build-lib/
+native/ws-core/build-obj/
+native/ws-core/downloads/
+native/ws-core/deps/
+native/ws-core/libxml/
+
+# bundled upstream wireshark source should stay out of git
+wireshark/
+
+# local docs/chat artifacts
+chat/*.docx
+chat/*.png
+chat/*.jpg
+chat/*.md
+gcm-diagnose.log
+hs_err_pid*.log
